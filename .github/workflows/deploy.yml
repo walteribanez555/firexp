@@ -1,10 +1,13 @@
-name: Deploy (CDK + ECS)
+name: Deploy (CDK)
 
 # Manual only — deploying creates/mutates real AWS resources and costs money.
 # Auth: the `infra-deploy` IAM user's keys as repo secrets AWS_ACCESS_KEY_ID /
-# AWS_SECRET_ACCESS_KEY (+ AWS_ACCOUNT_ID). Rollback = run this workflow from an
-# older tag (the dispatch ref is checked out and redeployed).
-# Hardening TODO: swap the static keys for GitHub OIDC (role-to-assume).
+# AWS_SECRET_ACCESS_KEY. Rollback = run this workflow from an older tag (the
+# dispatch ref is checked out and redeployed).
+#
+# Fully autonomous: `cdk deploy --all` builds & pushes the relay image
+# (ContainerImage.fromAsset) and wires every cross-stack URL itself. No manual
+# ECR / docker / ecs steps.
 on:
   workflow_dispatch:
     inputs:
@@ -46,93 +49,38 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      # ── Build the shared types package (CDK bundles apps from source) ─────────
-      - name: Install root deps
-        run: npm ci
+      # Enable arm64 emulation so cdk-assets can build the Graviton relay image
+      # on the amd64 runner (fromAsset → docker build --platform linux/arm64).
+      - name: Set up QEMU (arm64)
+        uses: docker/setup-qemu-action@v3
 
-      - name: Build @fire-stick/types
-        run: npm run build --workspace @fire-stick/types
+      - name: Install deps + build shared types
+        run: |
+          npm ci
+          npm run build --workspace @fire-stick/types
 
       - name: Install CDK deps
         working-directory: infra/cdk
         run: npm ci --no-audit --no-fund
 
-      # ── Phase 1: content + ai + relay BASE (creates ECR, no relay service) ────
-      #   deployService=false so the relay service isn't created before its image
-      #   exists in ECR (it would never stabilise).
-      - name: Deploy stacks (relay base only)
+      # One shot: content + ai + relay (CDK orders by dependency, builds the
+      # relay image, imports the content-api URL automatically).
+      - name: cdk deploy --all
         working-directory: infra/cdk
         env:
           ENV: ${{ github.event.inputs.environment }}
-        run: |
-          npx cdk deploy --all \
-            -c environment=$ENV \
-            -c deployService=false \
-            --require-approval never
+        run: npx cdk deploy --all -c environment=$ENV --require-approval never
 
-      - name: Read stack outputs
-        id: outputs
+      - name: Seed DynamoDB
+        working-directory: apps/content-api
         env:
           ENV: ${{ github.event.inputs.environment }}
         run: |
-          CONTENT_API_URL=$(aws cloudformation describe-stacks \
-            --stack-name FirexpContentStack \
-            --query "Stacks[0].Outputs[?OutputKey=='ContentApiUrl'].OutputValue" \
-            --output text)
-          echo "content_api_url=$CONTENT_API_URL" >> "$GITHUB_OUTPUT"
-          echo "Content API: $CONTENT_API_URL"
-
-      # ── Build & push the relay image to ECR (ARM64 / Graviton) ───────────────
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Login to Amazon ECR
-        id: ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build & push relay image
-        uses: docker/build-push-action@v6
-        env:
-          ENV: ${{ github.event.inputs.environment }}
-        with:
-          context: .
-          file: apps/relay/Dockerfile
-          target: relay
-          platforms: linux/arm64
-          push: true
-          tags: |
-            ${{ steps.ecr.outputs.registry }}/firexp-${{ github.event.inputs.environment }}-relay:${{ github.event.inputs.environment }}-latest
-            ${{ steps.ecr.outputs.registry }}/firexp-${{ github.event.inputs.environment }}-relay:${{ github.sha }}
-          cache-from: type=gha,scope=relay
-          cache-to: type=gha,scope=relay,mode=max
-
-      # ── Phase 2: create/update the relay service now the image exists ─────────
-      - name: Deploy relay service
-        working-directory: infra/cdk
-        env:
-          ENV: ${{ github.event.inputs.environment }}
-          CONTENT_API_URL: ${{ steps.outputs.outputs.content_api_url }}
-        run: |
-          npx cdk deploy FirexpRelayStack \
-            -c environment=$ENV \
-            -c deployService=true \
-            -c contentApiUrl="$CONTENT_API_URL" \
-            --require-approval never
-
-      # ── Roll the service so a same-tag image push is actually picked up ───────
-      - name: Force new ECS deployment
-        env:
-          ENV: ${{ github.event.inputs.environment }}
-        run: |
-          CLUSTER="firexp-$ENV-relay-cluster"
-          SERVICE="firexp-$ENV-relay"
-          aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --force-new-deployment >/dev/null
-          echo "Waiting for the relay service to stabilise…"
-          aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
-          echo "Relay service stable."
+          AWS_REGION=${{ env.AWS_REGION }} \
+          SERIES_TABLE=firexp-$ENV-series \
+          EPISODES_TABLE=firexp-$ENV-episodes \
+          SESSIONS_TABLE=firexp-$ENV-sessions \
+          npx ts-node -r tsconfig-paths/register scripts/dynamo-init.ts
 
       - name: Relay endpoint (dev)
         if: ${{ github.event.inputs.environment == 'dev' }}

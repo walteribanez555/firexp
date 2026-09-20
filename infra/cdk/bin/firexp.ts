@@ -23,7 +23,7 @@ const cdkEnv = { account: AWS_ACCOUNT, region: AWS_REGION };
 // ── Content stack ─────────────────────────────────────────────────────────────
 // DynamoDB (series/episodes/sessions) + S3 + CloudFront (OAC) + content-api
 // Lambda + HTTP API.
-new FirexpContentStack(app, "FirexpContentStack", {
+const contentStack = new FirexpContentStack(app, "FirexpContentStack", {
   env: cdkEnv,
   appEnv: env,
   description: `Firexp content-api stack — ${env}`,
@@ -49,10 +49,13 @@ new FirexpAiStack(app, "FirexpAiStack", {
 // ── Relay stack (WebSocket, ECS Fargate) ────────────────────────────────────────
 // Real-time room relay. DEV: single public-IP Fargate task (no ALB, no NAT).
 // PROD: ALB + private task. See lib/firexp-relay-stack.ts for the full rationale.
-// Pass the deployed content-api URL so the relay can forward sessions:
-//   cdk deploy FirexpRelayStack -c contentApiUrl=https://xxxx.execute-api...
-new FirexpRelayStack(app, "FirexpRelayStack", {
+// Fully autonomous: CDK builds/pushes the image (fromAsset) and imports the
+// content-api URL from FirexpContentStack automatically. Just:
+//   cdk deploy FirexpRelayStack -c environment=<env>
+const relayStack = new FirexpRelayStack(app, "FirexpRelayStack", {
   env: cdkEnv,
   appEnv: env,
   description: `Firexp relay stack (WebSocket, ECS Fargate) — ${env}`,
 });
+// The relay imports the content-api URL export, so content must deploy first.
+relayStack.addDependency(contentStack);

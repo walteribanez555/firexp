@@ -21,9 +21,15 @@ Everything is **AWS CDK** (`infra/cdk`). Account/region used: `557690620729` /
 
 ```bash
 aws sts get-caller-identity          # creds present, account 557690620729
-docker info                          # Docker running (needed for the relay image)
+docker info                          # Docker running — ONLY needed to deploy the relay
 cd infra/cdk && npx cdk bootstrap    # only if CDKToolkit stack doesn't exist yet
 ```
+
+> **Why Docker?** Only the **relay** needs it — it runs on ECS Fargate, so CDK
+> builds & pushes its container image (`ContainerImage.fromAsset`) during
+> `cdk deploy`. The Lambda stacks (content-api, prompt-generator) bundle with
+> local esbuild and need **no** Docker. If you don't want Docker locally, run
+> the **Deploy** GitHub Action — the runner builds the image for you.
 
 **Enable Bedrock model access** (IAM is not enough): AWS Console → Amazon Bedrock
 → Model access → request `Claude Haiku 4.5` + `Claude Sonnet 4.6`. Without this the
@@ -37,8 +43,9 @@ AI features return `AccessDeniedException`.
    `infra-deploy` IAM user), and optionally `AWS_ACCOUNT_ID`.
 2. Actions → **Deploy (CDK + ECS)** → *Run workflow* → pick `dev` or `prod`.
 
-The workflow runs the whole sequence below (base → push image → service → roll →
-print IP). **Rollback** = run the same workflow from an older git tag.
+The workflow is one shot: `cdk deploy --all` (builds/pushes the relay image and
+wires cross-stack URLs itself) + seed + prints the relay IP.
+**Rollback** = run the same workflow from an older git tag.
 
 ---
 
@@ -75,34 +82,19 @@ npx ts-node -r tsconfig-paths/register scripts/dynamo-init.ts     # idempotent
 
 Verify: `curl https://XXXX.execute-api.us-east-1.amazonaws.com/api/v1/series`
 
-### 3. Relay — 3 phases (image must exist before the service starts)
+### 3. Relay — one command (autonomous)
 
-**3a. Base only** (creates VPC + ECR + cluster; no service yet):
-
-```bash
-cd infra/cdk
-npx cdk deploy FirexpRelayStack -c environment=dev -c deployService=false --require-approval never
-REPO=$(aws cloudformation describe-stacks --stack-name FirexpRelayStack \
-  --query "Stacks[0].Outputs[?OutputKey=='RelayRepoUri'].OutputValue" --output text)
-```
-
-**3b. Build & push the relay image** (ARM64 / Graviton — matches the task):
-
-```bash
-cd <repo-root>
-aws ecr get-login-password --region us-east-1 \
-  | docker login --username AWS --password-stdin 557690620729.dkr.ecr.us-east-1.amazonaws.com
-docker build --platform linux/arm64 -f apps/relay/Dockerfile -t "$REPO:dev-latest" .
-docker push "$REPO:dev-latest"
-```
-
-**3c. Deploy the service** (wire the content-api URL):
+CDK builds & pushes the image (`fromAsset`) and imports the content-api URL from
+the content stack automatically. Docker must be running.
 
 ```bash
 cd infra/cdk
-npx cdk deploy FirexpRelayStack -c environment=dev -c deployService=true \
-  -c contentApiUrl=https://XXXX.execute-api.us-east-1.amazonaws.com --require-approval never
+npx cdk deploy FirexpRelayStack -c environment=dev --require-approval never
 ```
+
+> Or skip steps 1–3 entirely with `npx cdk deploy --all -c environment=dev` — CDK
+> orders the stacks by dependency (content → relay) in a single run.
+> On an amd64 host, enable arm64 emulation first: `docker run --privileged --rm tonistiigi/binfmt --install arm64`.
 
 ### 4. Find the relay & wire the clients
 

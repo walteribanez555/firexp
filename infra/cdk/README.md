@@ -127,25 +127,20 @@ bash infra/scripts/relay-ip.sh                 # defaults: firexp-dev-relay-clus
 For a stable dev hostname, add an EventBridge (ECS Task State Change) → Lambda
 rule that upserts a Route53 A record on task start (not included; needs a domain).
 
-### First deploy (image must exist)
+### Deploy (autonomous)
 
-The service references the ECR image tag `${env}-latest`, so an image must be
-pushed **before** the service can stabilise:
-
-```bash
-cd infra/cdk && npx cdk deploy FirexpRelayStack -c environment=dev   # creates VPC/cluster/ECR/service
-# then build + push (or let CI do it):
-aws ecr get-login-password | docker login --username AWS --password-stdin <acct>.dkr.ecr.us-east-1.amazonaws.com
-docker build -f apps/relay/Dockerfile -t <repoUri>:dev-latest .      # context = repo root
-docker push <repoUri>:dev-latest
-aws ecs update-service --cluster firexp-dev-relay-cluster --service firexp-dev-relay --force-new-deployment
-```
-
-Pass the deployed content-api URL so the relay can forward sessions:
+One command — CDK builds & pushes the relay image (`ContainerImage.fromAsset`)
+and imports the content-api URL from `FirexpContentStack` automatically. Docker
+must be running (that's the only container prerequisite):
 
 ```bash
-npx cdk deploy FirexpRelayStack -c environment=dev -c contentApiUrl=https://xxxx.execute-api.us-east-1.amazonaws.com
+cd infra/cdk
+npx cdk deploy FirexpRelayStack -c environment=dev --require-approval never
+# or the whole platform in dependency order:
+npx cdk deploy --all -c environment=dev --require-approval never
 ```
+
+Override the content-api URL if needed with `-c contentApiUrl=...`.
 
 ---
 
@@ -250,9 +245,9 @@ approved in the AWS Console:
 | Resource | Name |
 |----------|------|
 | VPC | `firexp-{env}-vpc` (dev: public only, no NAT · prod: +1 NAT) |
-| ECR repository | `firexp-{env}-relay` |
 | ECS cluster | `firexp-{env}-relay-cluster` |
 | ECS Fargate service | `firexp-{env}-relay` |
+| Container image | CDK asset (bootstrap ECR) — built from `apps/relay/Dockerfile` |
 | ALB | _(prod only — `RelayLoadBalancerDns` output)_ |
 
 ---

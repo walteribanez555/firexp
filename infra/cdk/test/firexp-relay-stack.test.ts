@@ -21,13 +21,14 @@ describe("FirexpRelayStack synthesis", () => {
 });
 
 describe("shared resources", () => {
-  it("creates an ECR repo, cluster and Fargate service", () => {
+  it("creates a cluster and a single Fargate service", () => {
     const t = buildStack("dev");
-    t.resourceCountIs("AWS::ECR::Repository", 1);
     t.resourceCountIs("AWS::ECS::Cluster", 1);
     t.resourceCountIs("AWS::ECS::Service", 1);
-    t.hasResourceProperties("AWS::ECR::Repository", {
-      RepositoryName: "firexp-dev-relay",
+    // Image comes from a CDK asset (bootstrap ECR), so the stack owns no ECR repo.
+    t.resourceCountIs("AWS::ECR::Repository", 0);
+    t.hasResourceProperties("AWS::ECS::TaskDefinition", {
+      RuntimePlatform: { CpuArchitecture: "ARM64" },
     });
   });
 });

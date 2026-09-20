@@ -1,11 +1,15 @@
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as ecs from "aws-cdk-lib/aws-ecs";
 import * as ecsPatterns from "aws-cdk-lib/aws-ecs-patterns";
 import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as logs from "aws-cdk-lib/aws-logs";
+import { Platform } from "aws-cdk-lib/aws-ecr-assets";
 import { Construct } from "constructs";
+import * as path from "path";
+
+// Repo root (two levels up from infra/cdk/lib/) — the Docker build context.
+const REPO_ROOT = path.join(__dirname, "..", "..", "..");
 
 export interface FirexpRelayStackProps extends cdk.StackProps {
   /** Deployment stage: "dev" | "prod" (or any custom name). */
@@ -15,10 +19,17 @@ export interface FirexpRelayStackProps extends cdk.StackProps {
 /**
  * FirexpRelayStack — the real-time WebSocket relay on ECS Fargate.
  *
- * The relay keeps room state IN MEMORY (it is a "dumb forwarder" with a
- * RoomState per room), so it must run as a SINGLE task. Horizontal scaling
- * would split a room's TV and phones across tasks and break it; that needs a
- * shared pub/sub (e.g. ElastiCache) and is intentionally out of scope here.
+ * Fully autonomous: `cdk deploy FirexpRelayStack` builds the relay image from
+ * apps/relay/Dockerfile (ContainerImage.fromAsset → cdk-assets builds & pushes
+ * to the bootstrap ECR at deploy time) and wires the content-api URL from the
+ * FirexpContentStack export automatically. No manual docker build/push, no ECR
+ * repo to manage, no multi-phase deploy. Docker must be running on the deploy
+ * host (or CI runner) — that is the only manual prerequisite for a container.
+ *
+ * The relay keeps room state IN MEMORY (a "dumb forwarder" with a RoomState per
+ * room), so it runs as a SINGLE task. Horizontal scaling would split a room's
+ * TV and phones across tasks and break it; that needs shared pub/sub (e.g.
+ * ElastiCache) and is intentionally out of scope.
  *
  * ── Topology decision: DEV vs PROD ────────────────────────────────────────────
  * DEV  (appEnv !== "prod")  — cost-optimised for testing/development:
@@ -35,9 +46,6 @@ export interface FirexpRelayStackProps extends cdk.StackProps {
  *   • Still a single task (state-in-memory); add TLS (ACM cert + 443) + a
  *     domain for wss:// before shipping to real audiences.
  *   → ALB + NAT + Fargate ≈ ~$57/mo.
- *
- * First deploy: the ECR repo must contain an image tagged `${appEnv}-latest`
- * BEFORE the service stabilises (the CI build-push step, or push manually).
  */
 export class FirexpRelayStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: FirexpRelayStackProps) {
@@ -47,21 +55,18 @@ export class FirexpRelayStack extends cdk.Stack {
     const isProd = appEnv === "prod";
     const project = "firexp";
     const prefix = `${project}-${appEnv}`;
+    const RELAY_PORT = 3001;
 
     cdk.Tags.of(this).add("Project", project);
     cdk.Tags.of(this).add("Environment", appEnv);
     cdk.Tags.of(this).add("ManagedBy", "CDK");
 
-    // content-api URL the relay forwards log_entry / episode_start to.
-    // Pass at deploy time: -c contentApiUrl=https://xxxx.execute-api...
+    // content-api URL the relay forwards to. Auto-wired from the content stack's
+    // export; override with `-c contentApiUrl=...` if needed. Base origin, WITHOUT
+    // the /api/v1 prefix (the relay adds it).
     const contentApiUrl =
-      (this.node.tryGetContext("contentApiUrl") as string | undefined) ?? "";
-
-    // First-deploy gate: the ECS service can only stabilise once an image exists
-    // in ECR. Deploy once with `-c deployService=false` to create the repo (+VPC/
-    // cluster), push the image, then deploy again with the default (true).
-    const deployService =
-      (this.node.tryGetContext("deployService") ?? "true") !== "false";
+      (this.node.tryGetContext("contentApiUrl") as string | undefined) ??
+      cdk.Fn.importValue(`${prefix}-content-api-url`);
 
     // ── VPC — NAT only in prod ────────────────────────────────────────────────
     const vpc = new ec2.Vpc(this, "Vpc", {
@@ -72,15 +77,6 @@ export class FirexpRelayStack extends cdk.Stack {
       natGateways: isProd ? 1 : 0,
     });
 
-    // ── ECR — relay image repository ──────────────────────────────────────────
-    const repo = new ecr.Repository(this, "RelayRepo", {
-      repositoryName: `${prefix}-relay`,
-      removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
-      emptyOnDelete: !isProd,
-      lifecycleRules: [{ maxImageCount: 10 }],
-    });
-
-    // ── Cluster + logs ────────────────────────────────────────────────────────
     const cluster = new ecs.Cluster(this, "Cluster", {
       vpc,
       clusterName: `${prefix}-relay-cluster`,
@@ -92,15 +88,25 @@ export class FirexpRelayStack extends cdk.Stack {
       removalPolicy: isProd ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
     });
 
-    const image = ecs.ContainerImage.fromEcrRepository(repo, `${appEnv}-latest`);
+    // ── Image built & published by CDK at deploy time (no manual push) ─────────
+    const image = ecs.ContainerImage.fromAsset(REPO_ROOT, {
+      file: "apps/relay/Dockerfile",
+      target: "relay",
+      platform: Platform.LINUX_ARM64, // Graviton — cheaper; built once at deploy
+    });
     const containerEnv: Record<string, string> = {
       NODE_ENV: isProd ? "production" : "development",
-      PORT: "3001",
+      PORT: String(RELAY_PORT),
       CONTENT_API_URL: contentApiUrl,
     };
-    const RELAY_PORT = 3001;
 
-    if (deployService && isProd) {
+    // Graviton runtime for the task.
+    const runtimePlatform = {
+      cpuArchitecture: ecs.CpuArchitecture.ARM64,
+      operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
+    };
+
+    if (isProd) {
       // ── PROD: ALB + private task ────────────────────────────────────────────
       const service = new ecsPatterns.ApplicationLoadBalancedFargateService(
         this,
@@ -111,11 +117,7 @@ export class FirexpRelayStack extends cdk.Stack {
           desiredCount: 1, // state-in-memory → single task (see class doc)
           cpu: 512,
           memoryLimitMiB: 1024,
-          // Graviton (ARM64) — ~20% cheaper; matches the natively-built image.
-          runtimePlatform: {
-            cpuArchitecture: ecs.CpuArchitecture.ARM64,
-            operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
-          },
+          runtimePlatform,
           publicLoadBalancer: true,
           listenerPort: 80,
           protocol: elbv2.ApplicationProtocol.HTTP, // TODO: 443 + ACM cert for wss://
@@ -151,20 +153,16 @@ export class FirexpRelayStack extends cdk.Stack {
 
       new cdk.CfnOutput(this, "RelayLoadBalancerDns", {
         value: service.loadBalancer.loadBalancerDnsName,
-        description: "Relay ALB DNS — point clients at ws://<dns> (add TLS for wss)",
+        description: "Relay ALB DNS - point clients at ws://<dns> (add TLS for wss)",
         exportName: `${prefix}-relay-lb-dns`,
       });
-    } else if (deployService) {
+    } else {
       // ── DEV: single public-IP Fargate task, no ALB, no NAT ──────────────────
       const taskDef = new ecs.FargateTaskDefinition(this, "RelayTask", {
         cpu: 256,
         memoryLimitMiB: 512,
         family: `${prefix}-relay`,
-        // Graviton (ARM64) — ~20% cheaper; matches the natively-built image.
-        runtimePlatform: {
-          cpuArchitecture: ecs.CpuArchitecture.ARM64,
-          operatingSystemFamily: ecs.OperatingSystemFamily.LINUX,
-        },
+        runtimePlatform,
       });
       taskDef.addContainer("relay", {
         image,
@@ -214,14 +212,8 @@ export class FirexpRelayStack extends cdk.Stack {
       new cdk.CfnOutput(this, "RelayDiscovery", {
         value: `bash infra/scripts/relay-ip.sh ${cluster.clusterName} ${service.serviceName}`,
         description:
-          "The task's public IP is ephemeral — run this to resolve the current relay IP.",
+          "The dev task's public IP is ephemeral - run this to resolve the current relay IP.",
       });
     }
-
-    new cdk.CfnOutput(this, "RelayRepoUri", {
-      value: repo.repositoryUri,
-      description: "ECR URI — push the relay image here (tag: <env>-latest) before deploy",
-      exportName: `${prefix}-relay-repo-uri`,
-    });
   }
 }
