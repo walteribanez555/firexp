@@ -39,13 +39,45 @@ AI features return `AccessDeniedException`.
 
 ## A. Deploy with GitHub Actions (recommended)
 
-1. Set repo secrets: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (the
-   `infra-deploy` IAM user), and optionally `AWS_ACCOUNT_ID`.
-2. Actions → **Deploy (CDK + ECS)** → *Run workflow* → pick `dev` or `prod`.
+The **Deploy (CDK)** workflow (`.github/workflows/deploy.yml`) does everything on
+one click: bootstrap (idempotent) → `cdk deploy --all` (builds/pushes the relay
+image with `fromAsset`, orders content → ai → relay, wires cross-stack URLs) →
+seed DynamoDB → print the relay IP.
 
-The workflow is one shot: `cdk deploy --all` (builds/pushes the relay image and
-wires cross-stack URLs itself) + seed + prints the relay IP.
+### One-time setup (only these — the rest is automatic)
+
+1. **Repo secrets** (Settings → Secrets and variables → Actions → *New secret*):
+   - `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for an IAM user/role that can
+     deploy (the `infra-deploy` user has `AdministratorAccess`).
+   ```bash
+   # or from the CLI, using the keys already on this machine:
+   gh secret set AWS_ACCESS_KEY_ID     -R <owner>/firexp --body "$(aws configure get aws_access_key_id)"
+   gh secret set AWS_SECRET_ACCESS_KEY -R <owner>/firexp --body "$(aws configure get aws_secret_access_key)"
+   ```
+2. **Bedrock model access** (once, per account — cannot be automated): Console →
+   Amazon Bedrock → Model access → enable `Claude Haiku 4.5` + `Claude Sonnet 4.6`.
+   Only needed for the AI features (recap/prompt-gen); the deploy itself succeeds
+   without it.
+
+CDK **bootstrap** is handled by the workflow (idempotent), so no manual step.
+
+### Run it
+
+Actions → **Deploy (CDK)** → *Run workflow* → pick `dev` or `prod`. That's it.
+
 **Rollback** = run the same workflow from an older git tag.
+
+### Fully hands-off (optional): auto-deploy on merge
+
+To deploy automatically when `main` changes, add a `push` trigger to
+`deploy.yml` (kept manual by default so AWS isn't mutated on every commit):
+
+```yaml
+on:
+  push: { branches: [main] }
+  workflow_dispatch: { inputs: { environment: { type: choice, options: [dev, prod], default: dev } } }
+```
+(with `push`, default the environment to `dev` in the steps).
 
 ---
 

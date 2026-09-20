@@ -63,6 +63,11 @@ jobs:
         working-directory: infra/cdk
         run: npm ci --no-audit --no-fund
 
+      # Idempotent — no-op if the account/region is already bootstrapped.
+      - name: CDK bootstrap
+        working-directory: infra/cdk
+        run: npx cdk bootstrap "aws://$(aws sts get-caller-identity --query Account --output text)/${{ env.AWS_REGION }}"
+
       # One shot: content + ai + relay (CDK orders by dependency, builds the
       # relay image, imports the content-api URL automatically).
       - name: cdk deploy --all
