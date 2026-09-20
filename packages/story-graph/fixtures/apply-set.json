@@ -1,0 +1,50 @@
+[
+  {
+    "description": "relative increment",
+    "flags": { "confident": 0 },
+    "set": { "confident": "+1" },
+    "expected": { "confident": 1 }
+  },
+  {
+    "description": "relative decrement",
+    "flags": { "confident": 0 },
+    "set": { "confident": "-2" },
+    "expected": { "confident": -2 }
+  },
+  {
+    "description": "absolute assignment",
+    "flags": { "confident": 5 },
+    "set": { "confident": 0 },
+    "expected": { "confident": 0 }
+  },
+  {
+    "description": "adds new flag relative from zero",
+    "flags": {},
+    "set": { "brave": "+1" },
+    "expected": { "brave": 1 }
+  },
+  {
+    "description": "does not mutate source flags",
+    "flags": { "confident": 1 },
+    "set": { "confident": "+1" },
+    "expected": { "confident": 2 }
+  },
+  {
+    "description": "mixed relative and absolute in same set",
+    "flags": { "confident": 2, "united": 1, "hero": 0 },
+    "set": { "confident": "+1", "united": -5, "hero": "+2" },
+    "expected": { "confident": 3, "united": -5, "hero": 2 }
+  },
+  {
+    "description": "empty set returns copy of flags",
+    "flags": { "confident": 3 },
+    "set": {},
+    "expected": { "confident": 3 }
+  },
+  {
+    "description": "accumulates on top of existing flag value",
+    "flags": { "confident": -1 },
+    "set": { "confident": "-1" },
+    "expected": { "confident": -2 }
+  }
+]

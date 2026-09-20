@@ -1,0 +1,14 @@
+services:
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    container_name: amazon-fire-stick-dynamodb
+    restart: unless-stopped
+    user: root
+    command: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-dbPath", "/home/dynamodblocal"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - dynamodb_data:/home/dynamodblocal
+
+volumes:
+  dynamodb_data:

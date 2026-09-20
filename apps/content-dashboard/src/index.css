@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Firexp design system — mirrors fire-hack ui/theme/Color.kt.
+     Light is the default (:root); .dark is the signature ember-on-near-black theme. */
+  :root {
+    --background: 40 22% 97%;         /* warm off-white */
+    --foreground: 216 18% 12%;        /* near-black ink */
+    --card: 0 0% 100%;
+    --card-foreground: 216 18% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 216 18% 12%;
+    --primary: 11 90% 52%;            /* ember (AA on light) */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 30 12% 92%;
+    --secondary-foreground: 216 18% 12%;
+    --muted: 30 12% 92%;
+    --muted-foreground: 220 9% 42%;
+    --accent: 30 14% 90%;
+    --accent-foreground: 216 18% 12%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 30 10% 86%;
+    --input: 30 10% 86%;
+    --ring: 11 90% 52%;
+    --amber: 36 95% 44%;              /* darker amber for light contrast */
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    --background: 240 9% 2%;          /* #050506 */
+    --foreground: 40 20% 95%;         /* #F5F3F0 */
+    --card: 216 15% 9%;               /* #14171B */
+    --card-foreground: 40 20% 95%;
+    --popover: 216 15% 9%;
+    --popover-foreground: 40 20% 95%;
+    --primary: 11 100% 60%;           /* ember #FF5A36 */
+    --primary-foreground: 20 55% 6%;  /* dark ink #1A0E08 */
+    --secondary: 213 14% 12%;         /* surface2 #1B1F24 */
+    --secondary-foreground: 40 20% 95%;
+    --muted: 213 14% 12%;
+    --muted-foreground: 240 5% 62%;   /* dim #9A9AA3 */
+    --accent: 212 15% 17%;            /* surface3 #242A31 (hover bg) */
+    --accent-foreground: 40 20% 95%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 40 20% 95%;
+    --border: 214 13% 16%;
+    --input: 214 13% 16%;
+    --ring: 11 100% 60%;              /* ember */
+    --amber: 36 100% 62%;             /* accent2 #FFB23D */
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Sora', system-ui, -apple-system, sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  code, kbd, pre, .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+}
+
+/* React Flow overrides — theme-aware via Firexp tokens */
+.react-flow__background {
+  background-color: hsl(var(--background));
+}
+
+.react-flow__edge-path {
+  stroke: hsl(var(--muted-foreground) / 0.55);
+  stroke-width: 2;
+}
+
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:hover .react-flow__edge-path {
+  stroke: hsl(var(--primary)); /* ember */
+}
+
+.react-flow__controls {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+}
+
+.react-flow__controls-button {
+  background: hsl(var(--card));
+  border-bottom: 1px solid hsl(var(--border));
+  color: hsl(var(--foreground));
+  fill: hsl(var(--foreground));
+}
+
+.react-flow__minimap {
+  background: hsl(var(--card));
+}

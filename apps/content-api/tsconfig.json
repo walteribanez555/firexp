@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node10",
+    "ignoreDeprecations": "6.0",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": false,
+    "sourceMap": true,
+    "outDir": "dist",
+    "types": ["node"],
+    "paths": {
+      "@fire-stick/types":         ["../../packages/types/dist/index.d.ts"],
+      "@fire-stick/story-graph":   ["../../packages/story-graph/dist/index.d.ts"]
+    }
+  },
+  "include": ["src"],
+  "exclude": ["node_modules", "dist", "src/**/__tests__"]
+}

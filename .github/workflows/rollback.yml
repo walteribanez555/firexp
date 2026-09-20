@@ -1,0 +1,52 @@
+name: Rollback
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to roll back to (e.g. v1.2.0)'
+        required: true
+
+env:
+  AWS_DEFAULT_REGION: us-east-1
+  NODE_VERSION: "24"
+  ENVIRONMENT: prod
+  STACK_NAME: AmazonFireStickStack-Prod
+
+jobs:
+  rollback:
+    name: Rollback to ${{ github.event.inputs.tag }}
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install workspace deps
+        run: npm ci
+
+      - name: Install infra deps
+        run: npm ci
+        working-directory: infra
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      - name: CDK deploy (rollback)
+        working-directory: infra
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+        run: |
+          npx cdk deploy ${{ env.STACK_NAME }} \
+            -c environment=${{ env.ENVIRONMENT }} \
+            --require-approval never

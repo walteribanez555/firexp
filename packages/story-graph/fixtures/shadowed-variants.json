@@ -1,0 +1,56 @@
+[
+  {
+    "description": "no shadowed variants — default is last",
+    "chapter": {
+      "id": "ch1",
+      "title": "Ch 1",
+      "decisions": [],
+      "variants": [
+        { "in": 0,  "out": 10, "when": "confident <= -2", "tag": "low" },
+        { "in": 10, "out": 20, "when": "default",         "tag": "normal" }
+      ]
+    },
+    "expectedShadowedCount": 0
+  },
+  {
+    "description": "one variant shadowed after default",
+    "chapter": {
+      "id": "ch2",
+      "title": "Ch 2",
+      "decisions": [],
+      "variants": [
+        { "in": 0,  "out": 10, "when": "default",         "tag": "normal" },
+        { "in": 10, "out": 20, "when": "confident <= -2", "tag": "low" }
+      ]
+    },
+    "expectedShadowedCount": 1,
+    "expectedShadowedTags": ["low"]
+  },
+  {
+    "description": "two variants shadowed after default",
+    "chapter": {
+      "id": "ch3",
+      "title": "Ch 3",
+      "decisions": [],
+      "variants": [
+        { "in": 0,  "out": 10, "when": "default",         "tag": "normal" },
+        { "in": 10, "out": 20, "when": "confident <= -2", "tag": "low" },
+        { "in": 20, "out": 30, "when": "confident >= 1",  "tag": "high" }
+      ]
+    },
+    "expectedShadowedCount": 2,
+    "expectedShadowedTags": ["low", "high"]
+  },
+  {
+    "description": "only default — nothing shadowed",
+    "chapter": {
+      "id": "ch4",
+      "title": "Ch 4",
+      "decisions": [],
+      "variants": [
+        { "in": 0, "out": 10, "when": "default", "tag": "only" }
+      ]
+    },
+    "expectedShadowedCount": 0
+  }
+]

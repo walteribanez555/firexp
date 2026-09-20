@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<title>TV Simulator</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0a0a14; color: #fff; font-family: monospace; padding: 24px; }
+h1   { font-size: 18px; margin-bottom: 4px; color: #e74c3c; }
+p.sub { color: #888; font-size: 13px; margin-bottom: 20px; }
+.row { display: flex; gap: 12px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+label { color: #888; font-size: 13px; width: 120px; flex-shrink: 0; }
+input, select { background: #1a1a1a; border: 1px solid #2e2e2e; color: #fff; padding: 8px 12px; border-radius: 6px; font-size: 14px; }
+button { background: #e74c3c; color: #fff; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-family: monospace; }
+button:hover { opacity: .85; }
+button.sec { background: #2e2e2e; }
+button:disabled { opacity: .4; cursor: default; }
+hr { border-color: #2e2e2e; margin: 18px 0; }
+#log { background: #111; border: 1px solid #2e2e2e; border-radius: 8px; padding: 16px; height: 240px; overflow-y: auto; font-size: 12px; line-height: 1.7; }
+.in  { color: #2ecc71; }
+.out { color: #3498db; }
+.sys { color: #888; }
+.err { color: #e74c3c; }
+#sdot { display:inline-block; width:10px; height:10px; border-radius:50%; background:#555; margin-right:6px; vertical-align:middle; }
+#sdot.ok { background:#2ecc71; } #sdot.err { background:#e74c3c; }
+.votes { background:#1a1a1a; border-radius:6px; padding:12px; margin-top:8px; }
+.vrow  { display:flex; gap:8px; align-items:center; margin-bottom:4px; font-size:13px; }
+.dot   { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+.badge { background:#2ecc71; color:#000; font-size:11px; font-weight:700; padding:2px 8px; border-radius:10px; margin-left:8px; }
+</style>
+</head>
+<body>
+
+<h1>🎬 TV Simulator</h1>
+<p class="sub">Simulates the Fire TV. Connect to the same room as the iPhone.</p>
+
+<div class="row">
+  <label>Room code</label>
+  <input id="room" value="TEST" style="width:90px;text-transform:uppercase"/>
+  <button id="btn-connect">Connect</button>
+  <span id="sdot"></span><span id="stxt" style="font-size:13px;color:#888">Disconnected</span>
+</div>
+
+<div class="row" style="margin-top:-4px">
+  <label></label>
+  <label style="width:auto;color:#555;font-size:12px">Auto-send WATCHING on episode_start:</label>
+  <input type="checkbox" id="auto-watching" checked style="width:auto"/>
+</div>
+
+<hr/>
+
+<div class="row">
+  <label>Chapter</label>
+  <input id="chapter-id"    value="ch1"        style="width:70px"/>
+  <input id="chapter-title" value="The Arrival" style="width:150px"/>
+  <input id="variant-tag"   value="cautious"    style="width:100px" placeholder="variant tag"/>
+</div>
+
+<div class="row">
+  <button id="btn-watching"      class="sec" disabled>📺 Send WATCHING</button>
+  <button id="btn-window"        class="sec" disabled>⚡ Open DECISION window</button>
+  <button id="btn-close-default" class="sec" disabled>⏱ Close window (default)</button>
+  <button id="btn-end"           class="sec" disabled>🏁 Send STORY_END</button>
+</div>
+
+<div class="row" style="margin-top:4px">
+  <label>Prompt</label>
+  <input id="prompt" value="You see the door is open. What do you do?" style="width:320px"/>
+</div>
+<div class="row">
+  <label>Option A</label>
+  <input id="opt-a" value="Go in" style="width:110px"/>
+  <select id="gest-a">
+    <option value="hands_up">hands_up</option>
+    <option value="crouch">crouch</option>
+    <option value="lean_forward">lean_forward</option>
+  </select>
+</div>
+<div class="row">
+  <label>Option B</label>
+  <input id="opt-b" value="Wait outside" style="width:110px"/>
+  <select id="gest-b">
+    <option value="crouch" selected>crouch</option>
+    <option value="hands_up">hands_up</option>
+    <option value="lean_forward">lean_forward</option>
+  </select>
+</div>
+<div class="row">
+  <label>Window (ms)</label>
+  <input id="win-ms" value="8000" style="width:70px" type="number"/>
+  <label style="width:auto;margin-left:16px">Phase</label>
+  <select id="phase"><option value="pre">pre</option><option value="during">during</option></select>
+</div>
+
+<hr/>
+
+<div id="votes-panel"></div>
+<div id="log"><div class="sys">— log —</div></div>
+
+<script>
+const params    = new URLSearchParams(location.search);
+const urlRoom   = (params.get('room') ?? '').toUpperCase();
+
+let ws = null, decisionId = null;
+let voteMap = new Map(), viewerColors = new Map();
+
+const $room   = document.getElementById('room');
+const $sdot   = document.getElementById('sdot');
+const $stxt   = document.getElementById('stxt');
+const $log    = document.getElementById('log');
+const $votes  = document.getElementById('votes-panel');
+const btns    = ['btn-watching','btn-window','btn-close-default','btn-end']
+                  .map(id => document.getElementById(id));
+
+if (urlRoom) $room.value = urlRoom;
+
+function log(cls, msg) {
+  const d = document.createElement('div');
+  d.className = cls;
+  d.textContent = `${new Date().toLocaleTimeString()} ${msg}`;
+  $log.appendChild(d);
+  $log.scrollTop = $log.scrollHeight;
+}
+
+function setStatus(cls, txt) { $sdot.className = cls; $stxt.textContent = txt; }
+function enableBtns(on) { btns.forEach(b => b.disabled = !on); }
+
+function send(obj) {
+  if (!ws || ws.readyState !== 1) return log('err', 'Not connected');
+  ws.send(JSON.stringify(obj));
+  log('out', '→ ' + JSON.stringify(obj).slice(0, 140));
+}
+
+function doConnect() {
+  if (ws) { ws.close(); ws = null; }
+  const room = $room.value.trim().toUpperCase();
+  const wsUrl = `ws://${location.hostname}:3001/?room=${room}`;
+  log('sys', `Connecting → ${wsUrl}`);
+  ws = new WebSocket(wsUrl);
+
+  ws.onopen = () => {
+    setStatus('ok', 'Connected — room ' + room);
+    enableBtns(true);
+    ws.send(JSON.stringify({ type: 'join', room }));
+    log('sys', 'Joined room ' + room);
+  };
+
+  ws.onmessage = ev => {
+    const msg = JSON.parse(ev.data);
+    log('in', '← ' + JSON.stringify(msg).slice(0, 160));
+
+    if (msg.type === 'assigned')      viewerColors.set(msg.viewer, msg.color);
+    if (msg.type === 'vote')          { voteMap.set(msg.viewer, { action: msg.action, color: viewerColors.get(msg.viewer) ?? '#888' }); renderVotes(); }
+    if (msg.type === 'episode_start') handleEpisodeStart(msg);
+  };
+
+  ws.onerror = () => { setStatus('err', 'Error'); log('err', 'WebSocket error'); };
+  ws.onclose = () => { setStatus('', 'Disconnected'); enableBtns(false); log('sys', 'Disconnected'); };
+}
+
+function handleEpisodeStart(msg) {
+  log('sys', `▶ episode_start received — chapterId: ${msg.chapterId}, flags: ${JSON.stringify(msg.flags)}`);
+  if (!document.getElementById('auto-watching').checked) return;
+  setTimeout(() => {
+    log('sys', 'Auto-sending WATCHING...');
+    send({
+      type:         'watching',
+      chapterId:    document.getElementById('chapter-id').value || msg.chapterId,
+      chapterTitle: document.getElementById('chapter-title').value,
+      variantTag:   document.getElementById('variant-tag').value,
+    });
+  }, 600);
+}
+
+document.getElementById('btn-connect').onclick   = doConnect;
+document.getElementById('btn-watching').onclick  = () => send({
+  type: 'watching',
+  chapterId:    document.getElementById('chapter-id').value,
+  chapterTitle: document.getElementById('chapter-title').value,
+  variantTag:   document.getElementById('variant-tag').value,
+});
+document.getElementById('btn-window').onclick = () => {
+  decisionId = 'dec_' + Date.now();
+  voteMap.clear(); renderVotes();
+  send({
+    type: 'window_open', decisionId,
+    phase:          document.getElementById('phase').value,
+    chapterTitle:   document.getElementById('chapter-title').value,
+    prompt:         document.getElementById('prompt').value,
+    options:        [
+      { gesture: document.getElementById('gest-a').value, label: document.getElementById('opt-a').value },
+      { gesture: document.getElementById('gest-b').value, label: document.getElementById('opt-b').value },
+    ],
+    duration:       Number(document.getElementById('win-ms').value),
+    questionIndex:  1, totalQuestions: 2,
+  });
+};
+document.getElementById('btn-close-default').onclick = () => {
+  const winner = resolveWinner();
+  send({ type: 'window_closed', chosen: winner });
+  log('sys', `Closed → chosen: ${winner}`);
+};
+document.getElementById('btn-end').onclick = () => send({ type: 'story_end' });
+
+function resolveWinner() {
+  if (!voteMap.size) return 'default';
+  const counts = {};
+  for (const { action } of voteMap.values()) counts[action] = (counts[action] ?? 0) + 1;
+  const max = Math.max(...Object.values(counts));
+  const top = Object.entries(counts).filter(([,v]) => v === max).map(([k]) => k);
+  return top.length === 1 ? top[0] : 'default';
+}
+
+function renderVotes() {
+  if (!voteMap.size) { $votes.innerHTML = ''; return; }
+  const rows = [...voteMap.entries()].map(([v, { action, color }]) =>
+    `<div class="vrow"><div class="dot" style="background:${color}"></div>Viewer ${v}: <b>${action}</b></div>`
+  ).join('');
+  $votes.innerHTML = `<div class="votes"><b>Votes (${voteMap.size}):</b><br>${rows}</div>`;
+}
+
+// Auto-connect if room in URL
+if (urlRoom) { setTimeout(doConnect, 300); }
+</script>
+</body>
+</html>

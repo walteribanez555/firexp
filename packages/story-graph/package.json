@@ -1,0 +1,27 @@
+{
+  "name": "@fire-stick/story-graph",
+  "version": "0.0.1",
+  "private": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "check-types": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fire-stick/types": "*",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "5.9.2",
+    "vitest": "^2.1.0"
+  }
+}

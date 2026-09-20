@@ -1,0 +1,97 @@
+{
+  "id": "episode1",
+  "seriesId": "series1",
+  "number": 1,
+  "video": "episode1.mp4",
+  "title": "The House at the End of the Road",
+  "questionnaire": [
+    {
+      "id": "q1",
+      "text": "How does your character react to the unknown?",
+      "options": [
+        { "id": "bold",    "label": "Face it head-on",   "flags": { "confident": "+1" } },
+        { "id": "careful", "label": "Proceed carefully", "flags": { "confident": "-1" } }
+      ]
+    },
+    {
+      "id": "q2",
+      "text": "What matters most when things go wrong?",
+      "options": [
+        { "id": "together", "label": "Staying together",      "flags": { "united": "+1" } },
+        { "id": "survive",  "label": "Surviving at any cost", "flags": { "united": "-1", "violent": "+1" } }
+      ]
+    }
+  ],
+  "flags": {
+    "violent":   0,
+    "confident": 0,
+    "united":    0
+  },
+  "chapters": [
+    {
+      "id": "ch1",
+      "title": "The Arrival",
+      "decisions": [
+        {
+          "id": "ch1_pre_1",
+          "phase": "pre",
+          "window": 6000,
+          "prompt": "You see the door is open. What do you do?",
+          "options": [
+            { "gesture": "hands_up", "label": "Go in", "set": { "violent": "+1", "confident": "+1" } },
+            { "gesture": "crouch",   "label": "Wait",  "set": { "confident": "-1" } }
+          ],
+          "default": { "set": { "confident": "-1" } }
+        }
+      ],
+      "variants": [
+        { "in": 0.0,  "out": 38.0, "when": "violent >= 1", "tag": "confrontation", "videoUrl": "https://cdn.example.com/episode1/ch1_confrontation.mp4" },
+        { "in": 38.0, "out": 76.0, "when": "default",      "tag": "cautious",      "videoUrl": "https://cdn.example.com/episode1/ch1_cautious.mp4" }
+      ]
+    },
+    {
+      "id": "ch2",
+      "title": "The Basement",
+      "decisions": [
+        {
+          "id": "ch2_pre_1",
+          "phase": "pre",
+          "window": 6000,
+          "prompt": "There is a noise below. Do you go down?",
+          "options": [
+            { "gesture": "hands_up",     "label": "Go down",  "set": { "confident": "+1" } },
+            { "gesture": "lean_forward", "label": "Stay put", "set": { "united": "+1" } }
+          ],
+          "default": { "set": {} }
+        },
+        {
+          "id": "ch2_during_1",
+          "phase": "during",
+          "at": 95.0,
+          "window": 5000,
+          "prompt": "You hear footsteps. Stay together?",
+          "options": [
+            { "gesture": "hands_up", "label": "Together", "set": { "united": "+1" } },
+            { "gesture": "crouch",   "label": "Split up", "set": { "united": "-1" } }
+          ],
+          "default": { "set": {} }
+        }
+      ],
+      "variants": [
+        { "in": 76.0,  "out": 114.0, "when": "confident >= 1 && violent >= 1", "tag": "bold",    "videoUrl": "https://cdn.example.com/episode1/ch2_bold.mp4" },
+        { "in": 114.0, "out": 152.0, "when": "united >= 1",                    "tag": "cautious", "videoUrl": "https://cdn.example.com/episode1/ch2_cautious.mp4" },
+        { "in": 152.0, "out": 188.0, "when": "default",                        "tag": "neutral",  "videoUrl": "https://cdn.example.com/episode1/ch2_neutral.mp4" }
+      ]
+    },
+    {
+      "id": "ch3",
+      "title": "The Exit",
+      "decisions": [],
+      "variants": [
+        { "in": 188.0, "out": 220.0, "when": "violent >= 2 && united >= 1", "tag": "ending_heroic",  "videoUrl": "https://cdn.example.com/episode1/ch3_heroic.mp4" },
+        { "in": 220.0, "out": 252.0, "when": "confident <= -2",             "tag": "ending_dark",    "videoUrl": "https://cdn.example.com/episode1/ch3_dark.mp4" },
+        { "in": 252.0, "out": 284.0, "when": "default",                     "tag": "ending_neutral", "videoUrl": "https://cdn.example.com/episode1/ch3_neutral.mp4" }
+      ]
+    }
+  ]
+}

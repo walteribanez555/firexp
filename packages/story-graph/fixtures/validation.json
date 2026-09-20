@@ -1,0 +1,136 @@
+[
+  {
+    "description": "valid minimal episode — no issues",
+    "episode": {
+      "id": "ep1",
+      "seriesId": "s1",
+      "number": 1,
+      "video": "https://cdn.example.com/ep1.mp4",
+      "title": "Valid Episode",
+      "flags": {},
+      "questionnaire": [],
+      "chapters": [
+        {
+          "id": "ch1",
+          "title": "Only Chapter",
+          "decisions": [],
+          "variants": [
+            { "in": 0, "out": 30, "when": "default", "tag": "only" }
+          ]
+        }
+      ]
+    },
+    "expectedOk": true,
+    "expectedErrorCodes": []
+  },
+  {
+    "description": "missing default as last variant → MISSING_DEFAULT_VARIANT error",
+    "episode": {
+      "id": "ep2",
+      "seriesId": "s1",
+      "number": 2,
+      "video": "https://cdn.example.com/ep2.mp4",
+      "title": "No Default Episode",
+      "flags": {},
+      "questionnaire": [],
+      "chapters": [
+        {
+          "id": "ch1",
+          "title": "Ch1",
+          "decisions": [],
+          "variants": [
+            { "in": 0, "out": 30, "when": "confident >= 1", "tag": "high" }
+          ]
+        }
+      ]
+    },
+    "expectedOk": false,
+    "expectedErrorCodes": ["MISSING_DEFAULT_VARIANT"]
+  },
+  {
+    "description": "shadowed variant (variant after default) → SHADOWED_VARIANT error",
+    "episode": {
+      "id": "ep3",
+      "seriesId": "s1",
+      "number": 3,
+      "video": "https://cdn.example.com/ep3.mp4",
+      "title": "Shadowed Episode",
+      "flags": {},
+      "questionnaire": [],
+      "chapters": [
+        {
+          "id": "ch1",
+          "title": "Ch1",
+          "decisions": [],
+          "variants": [
+            { "in": 0,  "out": 10, "when": "default",        "tag": "normal" },
+            { "in": 10, "out": 20, "when": "confident >= 1", "tag": "high" }
+          ]
+        }
+      ]
+    },
+    "expectedOk": false,
+    "expectedErrorCodes": ["SHADOWED_VARIANT"]
+  },
+  {
+    "description": "invalid when expression → INVALID_WHEN error",
+    "episode": {
+      "id": "ep4",
+      "seriesId": "s1",
+      "number": 4,
+      "video": "https://cdn.example.com/ep4.mp4",
+      "title": "Bad When Episode",
+      "flags": {},
+      "questionnaire": [],
+      "chapters": [
+        {
+          "id": "ch1",
+          "title": "Ch1",
+          "decisions": [],
+          "variants": [
+            { "in": 0,  "out": 10, "when": "NOT VALID!!", "tag": "bad" },
+            { "in": 10, "out": 20, "when": "default",     "tag": "fallback" }
+          ]
+        }
+      ]
+    },
+    "expectedOk": false,
+    "expectedErrorCodes": ["INVALID_WHEN"]
+  },
+  {
+    "description": "inconsequential decision → INCONSEQUENTIAL_DECISION warning, episode still ok",
+    "episode": {
+      "id": "ep5",
+      "seriesId": "s1",
+      "number": 5,
+      "video": "https://cdn.example.com/ep5.mp4",
+      "title": "Fake Choice Episode",
+      "flags": { "brave": 0 },
+      "questionnaire": [],
+      "chapters": [
+        {
+          "id": "ch1",
+          "title": "Ch1",
+          "decisions": [
+            {
+              "id": "dec1",
+              "phase": "pre",
+              "window": 10000,
+              "prompt": "Do something?",
+              "options": [
+                { "gesture": "hands_up", "label": "Yes", "set": { "brave": "+1" } },
+                { "gesture": "crouch",   "label": "No",  "set": { "brave": "-1" } }
+              ],
+              "default": { "set": {} }
+            }
+          ],
+          "variants": [
+            { "in": 0, "out": 30, "when": "default", "tag": "neutral" }
+          ]
+        }
+      ]
+    },
+    "expectedOk": true,
+    "expectedWarnCodes": ["INCONSEQUENTIAL_DECISION"]
+  }
+]

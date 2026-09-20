@@ -1,0 +1,62 @@
+# ---------------------------------------------------------------------------
+# terraform.tfvars.example
+#
+# Copy this file to terraform.tfvars and adjust values for your deployment.
+# DO NOT commit terraform.tfvars to source control if it contains secrets.
+# Add it to .gitignore:  echo "terraform.tfvars" >> .gitignore
+# ---------------------------------------------------------------------------
+
+# AWS region
+region = "us-east-1"
+
+# AWS account ID (used in inference-profile ARN construction)
+account_id = "557690620729"
+
+# Resource name prefix
+project = "fire-hack"
+
+# Bedrock cross-region inference-profile model IDs.
+# Both must be enabled in the Bedrock console BEFORE invoking them.
+model_ids = [
+  "us.anthropic.claude-haiku-4-5-20251001-v1:0", # primary — fast and cheap
+  "us.anthropic.claude-sonnet-4-6",               # secondary — higher quality
+]
+
+# DynamoDB table name
+prompts_table_name = "fire-hack-prompts"
+
+# Lambda configuration
+lambda_runtime         = "nodejs20.x"
+lambda_memory_mb       = 512
+lambda_timeout_seconds = 30
+lambda_log_retention_days = 14
+
+# Path to the Lambda ZIP (relative to infra/terraform/).
+# Build it first:
+#   cd apps/prompt-generator
+#   npm run build:lambda:prod
+#   zip -j dist/prompt-generator-lambda.zip dist/index.js
+lambda_zip_path = "../../apps/prompt-generator/dist/prompt-generator-lambda.zip"
+
+# Lambda function URL authorization type.
+# NONE    = unauthenticated (fine for local dev / testing behind other auth)
+# AWS_IAM = require SigV4 signed requests (recommended for production)
+lambda_url_auth_type = "NONE"
+
+# Application env vars
+prompt_mode       = "production"
+cache_ttl_seconds = 3600
+
+# Feature flags — set both to true once the build artifact exists
+create_lambda = false
+create_secret = false
+
+# Secrets Manager secret name (only used when create_secret = true)
+secret_name = "fire-hack/prompt-generator"
+
+# Resource tags
+tags = {
+  Project     = "fire-hack"
+  Environment = "production"
+  ManagedBy   = "terraform"
+}

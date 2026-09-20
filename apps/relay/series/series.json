@@ -1,0 +1,16 @@
+[
+  {
+    "id": "series1",
+    "title": "Mystery House",
+    "description": "A collection of interactive horror experiences where your choices change everything.",
+    "thumbnailUrl": "https://cdn.example.com/series1/thumbnail.jpg",
+    "episodes": [
+      {
+        "id": "episode1",
+        "number": 1,
+        "title": "The House at the End of the Road",
+        "thumbnailUrl": "https://cdn.example.com/episode1/thumbnail.jpg"
+      }
+    ]
+  }
+]

@@ -1,0 +1,56 @@
+{
+  "description": "Two-chapter episode: questionnaire sets confident, ch1 decision sets united, ch2 variants depend on united",
+  "episode": {
+    "id": "ep1",
+    "seriesId": "s1",
+    "number": 1,
+    "video": "https://cdn.example.com/ep1.mp4",
+    "title": "Test Episode",
+    "flags": { "confident": 0, "united": 0 },
+    "questionnaire": [
+      {
+        "id": "q1",
+        "text": "How do you feel?",
+        "options": [
+          { "id": "q1-a", "label": "Confident",    "flags": { "confident": "+2" } },
+          { "id": "q1-b", "label": "Not confident", "flags": { "confident": "-2" } }
+        ]
+      }
+    ],
+    "chapters": [
+      {
+        "id": "ch1",
+        "title": "The Meeting",
+        "decisions": [
+          {
+            "id": "dec1",
+            "phase": "pre",
+            "window": 10000,
+            "prompt": "Stand together?",
+            "options": [
+              { "gesture": "hands_up", "label": "Yes", "set": { "united": "+1" } },
+              { "gesture": "crouch",   "label": "No",  "set": { "united": "-1" } }
+            ],
+            "default": { "set": { "united": "+0" } }
+          }
+        ],
+        "variants": [
+          { "in": 0,  "out": 30, "when": "confident <= -2", "tag": "fearful" },
+          { "in": 30, "out": 60, "when": "confident >= 2",  "tag": "brave" },
+          { "in": 60, "out": 90, "when": "default",         "tag": "neutral" }
+        ]
+      },
+      {
+        "id": "ch2",
+        "title": "The Outcome",
+        "decisions": [],
+        "variants": [
+          { "in": 0,   "out": 30,  "when": "united >= 1",  "tag": "together" },
+          { "in": 30,  "out": 60,  "when": "united <= -1", "tag": "divided" },
+          { "in": 60,  "out": 90,  "when": "default",      "tag": "alone" }
+        ]
+      }
+    ]
+  },
+  "expectedReachableEndings": ["alone", "divided", "together"]
+}

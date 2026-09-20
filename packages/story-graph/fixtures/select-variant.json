@@ -1,0 +1,102 @@
+[
+  {
+    "description": "selects first matching variant",
+    "chapter": {
+      "id": "ch1",
+      "title": "Chapter 1",
+      "decisions": [],
+      "variants": [
+        { "in": 0,  "out": 10, "when": "confident <= -2", "tag": "low-confidence" },
+        { "in": 10, "out": 20, "when": "confident >= 1",  "tag": "high-confidence" },
+        { "in": 20, "out": 30, "when": "default",         "tag": "neutral" }
+      ]
+    },
+    "flags": { "confident": -3 },
+    "expectedTag": "low-confidence"
+  },
+  {
+    "description": "falls through to second variant",
+    "chapter": {
+      "id": "ch1",
+      "title": "Chapter 1",
+      "decisions": [],
+      "variants": [
+        { "in": 0,  "out": 10, "when": "confident <= -2", "tag": "low-confidence" },
+        { "in": 10, "out": 20, "when": "confident >= 1",  "tag": "high-confidence" },
+        { "in": 20, "out": 30, "when": "default",         "tag": "neutral" }
+      ]
+    },
+    "flags": { "confident": 2 },
+    "expectedTag": "high-confidence"
+  },
+  {
+    "description": "falls through to default variant",
+    "chapter": {
+      "id": "ch1",
+      "title": "Chapter 1",
+      "decisions": [],
+      "variants": [
+        { "in": 0,  "out": 10, "when": "confident <= -2", "tag": "low-confidence" },
+        { "in": 10, "out": 20, "when": "confident >= 1",  "tag": "high-confidence" },
+        { "in": 20, "out": 30, "when": "default",         "tag": "neutral" }
+      ]
+    },
+    "flags": { "confident": 0 },
+    "expectedTag": "neutral"
+  },
+  {
+    "description": "empty flags — missing flags default to 0 — picks default",
+    "chapter": {
+      "id": "ch2",
+      "title": "Chapter 2",
+      "decisions": [],
+      "variants": [
+        { "in": 0, "out": 5, "when": "hero >= 3", "tag": "hero" },
+        { "in": 5, "out": 10, "when": "default",  "tag": "normal" }
+      ]
+    },
+    "flags": {},
+    "expectedTag": "normal"
+  },
+  {
+    "description": "returns null when no variant matches and no default",
+    "chapter": {
+      "id": "ch3",
+      "title": "Chapter 3",
+      "decisions": [],
+      "variants": [
+        { "in": 0, "out": 5, "when": "hero >= 3", "tag": "hero" }
+      ]
+    },
+    "flags": { "hero": 0 },
+    "expectedTag": null
+  },
+  {
+    "description": "compound when — matches",
+    "chapter": {
+      "id": "ch4",
+      "title": "Chapter 4",
+      "decisions": [],
+      "variants": [
+        { "in": 0,  "out": 10, "when": "confident <= -2 && united >= 1", "tag": "both-conditions" },
+        { "in": 10, "out": 20, "when": "default",                        "tag": "fallback" }
+      ]
+    },
+    "flags": { "confident": -3, "united": 2 },
+    "expectedTag": "both-conditions"
+  },
+  {
+    "description": "compound when — does not match",
+    "chapter": {
+      "id": "ch4",
+      "title": "Chapter 4",
+      "decisions": [],
+      "variants": [
+        { "in": 0,  "out": 10, "when": "confident <= -2 && united >= 1", "tag": "both-conditions" },
+        { "in": 10, "out": 20, "when": "default",                        "tag": "fallback" }
+      ]
+    },
+    "flags": { "confident": -3, "united": 0 },
+    "expectedTag": "fallback"
+  }
+]

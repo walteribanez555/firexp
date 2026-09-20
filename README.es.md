@@ -1,0 +1,204 @@
+# Firexp — Narrativa interactiva ramificada para Fire TV
+
+Cine/serie **interactivo** donde el **teléfono de cada espectador es el mando**. La historia se
+bifurca en tiempo real según las decisiones del público: la TV solo reproduce video continuo, toda
+la interacción ocurre en el teléfono y el backend resuelve la rama **por detrás**.
+
+**Track:** Fire TV (Fire OS / Android) · **Mini challenges:** AWS Builder (Bedrock) · Open Source
+
+---
+
+## 1. Concepto (lógica de negocio)
+
+Un episodio no es un video lineal: es un **grafo** de clips (variantes) conectados por decisiones.
+El público construye su versión de la historia:
+
+1. **Cuestionario inicial** → fija un perfil (flags numéricos).
+2. Durante la reproducción aparecen **decisiones** que se votan desde el teléfono.
+3. Cada decisión **muta los flags**, y los flags **eligen qué clip se reproduce** a continuación.
+4. El árbol de condiciones lleva a **distintos finales**.
+
+> En una frase: *el cuestionario perfila, cada decisión muta flags, los flags eligen el clip, y el
+> árbol de condiciones lleva a distintos finales — la TV es el reproductor/cerebro y el teléfono es
+> el control de decisiones.*
+
+---
+
+## 2. Arquitectura
+
+```
+                 ┌───────────────── DynamoDB ─────────────────┐
+                 │   series · episodes (grafo) · prompt-cache  │
+                 └───────────────────▲─────────────────────────┘
+                                     │
+        ┌──────────────┐   HTTP {data}│        ┌──────────────────┐
+        │ content-api  │◀─────────────┘        │ prompt-generator │  (Bedrock)
+        │ (stateless)  │  S3 presign/multipart │   (stateless)    │
+        └──────▲───────┘        │              └──────────────────┘
+   CONTENT_API │                ▼
+        ┌──────┴───────┐    ┌───────┐        ┌─────────────────────┐
+        │    RELAY     │    │  S3   │──CDN──▶│  CloudFront (video) │
+        │ WS + estático│    └───────┘        └─────────────────────┘
+        │  /videos /phone
+        └───▲───────▲──┘
+   WebSocket│       │HTTP + WS
+     ┌──────┴──┐  ┌─┴────────┐
+     │ fire-hack│  │  phone   │  (web, sin instalar)
+     │   (TV)   │  │ (físico) │
+     └──────────┘  └──────────┘
+```
+
+| Componente | Tipo | Rol |
+|---|---|---|
+| **fire-hack** (Android/Kotlin/Compose) | app TV | El "director": reproduce (ExoPlayer), corre el `StoryEngine`, abre decisiones, tabula votos, elige la rama. |
+| **phone** (`apps/phone/web`, TS+Vite) | web servida por el relay | El espectador escanea un QR, responde el cuestionario y **vota**. Sin instalar. |
+| **relay** (Hono + `ws`) | tiempo real | Reenvía mensajes por sala, sirve el phone y el media (`/videos`,`/images`), proxifica el catálogo. **Sin lógica de negocio.** |
+| **content-api** (Hono) | stateless | Fuente de verdad del contenido sobre **DynamoDB**; presigned URLs (single/multipart) para subir a **S3**. |
+| **content-dashboard** (React + shadcn) | CMS | Crea series/episodios, edita el **flujo** (React Flow) y sube videos por variante. |
+| **prompt-generator** (Hono/Lambda) | stateless | Genera los textos de decisión con **Bedrock**, con caché en DynamoDB. |
+| **packages/types** | librería | Contratos compartidos (`@fire-stick/types`) entre relay, phone, content-api y (espejo) la TV. |
+
+---
+
+## 3. Modelo de datos
+
+```
+Series → Episodes → Chapters → { Variants, Decisions }
+```
+
+- **Flags** — contadores numéricos (`violent`, `confident`, `united`, …). Arrancan del cuestionario
+  y mutan con cada decisión (`"+1"`/`"-1"` = relativo, número = absoluto).
+- **Variant** — un clip de video por rama: `{ in, out, when, tag, videoUrl }`. `when` es una
+  condición sobre flags (`violent >= 1`, `confident <= -2 && united >= 1`). **La última variante es
+  siempre `when: "default"`.**
+- **Decision** — `phase: "pre"` (antes del capítulo) o `"during"` (a un timestamp `at`), con
+  `options: [{ gesture, label, set }]` (donde `set` muta flags) y un `default` si nadie vota.
+
+Selección de variante: se evalúa `when` **de arriba a abajo; gana la primera** que cumple (si
+ninguna, `default`).
+
+---
+
+## 4. Flujo end-to-end
+
+```
+TV: catálogo (DynamoDB) → seleccionas episodio → muestra QR (IP LAN del relay)
+Teléfono: escanea QR → se une a la sala (WebSocket) → cuestionario
+   → POST /rooms/:code/questionnaire → relay aplica flags → broadcast "episode_start"
+TV: StoryEngine arranca → reproduce la variante del cap. 1 (ExoPlayer)
+   → en cada decisión: envía "window_open" SOLO al teléfono (no hay overlay en la TV)
+Teléfono: muestra la decisión → vota ("vote")
+TV: tabula votos → resuelve (mayoría; empate/sin votos = default) → aplica flags
+   → "window_closed" + "log_entry" → elige y reproduce la siguiente variante
+     (precargada → sin buffering) ... repite hasta el final → "story_end"
+Teléfono: Library (Journey / Votes / What-if)
+```
+
+**Principio de diseño:** el relay es tonto, **la TV es el cerebro**, y **la TV no muestra UI de
+decisión** — solo video continuo; toda la decisión vive en el teléfono ("todo por detrás").
+
+### Contrato de mensajes (WebSocket)
+| Dirección | `type` | Uso |
+|---|---|---|
+| teléfono → relay → TV | `vote` | El espectador eligió una opción |
+| TV → relay → teléfonos | `window_open` / `window_closed` | Abre/cierra una decisión |
+| TV → relay → teléfonos | `watching` | Capítulo/variante en reproducción |
+| TV → relay | `log_entry` / `story_end` | Persistir decisión / fin |
+| relay → sala | `assigned` / `viewer_left` | Alta/baja de un viewer (la TV entra con `role=tv`, no cuenta como viewer) |
+| relay → todos | `episode_start` | Cuestionario listo → `{ chapterId, flags }` |
+
+---
+
+## 5. Gestión de contenido (CMS)
+
+- En el **dashboard** creas serie/episodio (número de episodio **automático y único** por serie) y
+  en el **editor de flujo** (React Flow) modelas capítulos → variantes → decisiones con sus
+  condiciones de flags; un panel de **simular flags** resalta el camino que se reproduciría.
+- **Subida de video** por variante: `POST /uploads/presign` (o `multipart/*` para archivos grandes)
+  → `PUT` directo a **S3** → se guarda `videoUrl` (servido por **CloudFront**).
+- Todo persiste en **DynamoDB**; relay/TV lo consumen con el mismo contrato `{data}`.
+
+---
+
+## 6. Rendimiento y robustez (TV)
+
+- **Precarga**: mientras reproduce un capítulo, prefetch de las variantes del **siguiente**
+  (caché de medios ExoPlayer) → cortes de rama sin buffering.
+- **Multiformato**: fallback de decoder + manejo de error de reproducción — un clip incompatible no
+  rompe la historia (la rama se ve en negro, el motor sigue).
+- **Sin datos mock**: el catálogo muestra solo contenido real; si el backend no responde queda
+  vacío (nunca series falsas). El relay tiene fallback a JSON local para el catálogo.
+
+---
+
+## 7. Despliegue (topología)
+
+| Servicio | Tipo | Destino |
+|---|---|---|
+| content-api, prompt-generator | stateless (HTTP) | **Lambda** (CDK `NodejsFunction` / Terraform) |
+| **relay** | **WebSocket / tiempo real** | **local ahora → Fargate (ECS) después** (Lambda no sirve WS persistente) |
+| datos | — | **DynamoDB** |
+| video | — | **S3 privado + CloudFront (OAC)** |
+| phone / dashboard | web | estático (servido por el relay / hosting estático) |
+
+Infra como código: `infra/cdk` (content-api + DynamoDB + S3 + CloudFront) y `infra/terraform`
+(Bedrock/prompt-generator). **Nada se aplica automáticamente.**
+
+---
+
+## 8. Estructura del repo
+
+```
+apps/
+  fire-hack/        TV — Android/Kotlin/Compose (StoryEngine, ExoPlayer)
+  phone/            Web del espectador (servida por el relay)
+  relay/            WebSocket + estático + proxy de catálogo
+  content-api/      CRUD de contenido sobre DynamoDB + presign S3
+  content-dashboard/ CMS React (series, editor de flujo, uploads)
+  prompt-generator/ Servicio de prompts IA (Bedrock + caché DynamoDB)
+packages/types/     @fire-stick/types (contratos compartidos)
+infra/cdk/          CDK: DynamoDB, S3, CloudFront, Lambda, HTTP API
+infra/terraform/    Terraform: IAM Bedrock, prompt-generator
+docker-compose.yml  MySQL + DynamoDB Local (dev)
+```
+
+---
+
+## 9. Correr en local
+
+```bash
+npm install
+
+# 1. DynamoDB Local + tablas + seed
+docker compose up -d dynamodb-local
+cd apps/content-api && DYNAMODB_ENDPOINT=http://localhost:8000 AWS_REGION=us-east-1 \
+  SERIES_TABLE=firexp-dev-series EPISODES_TABLE=firexp-dev-episodes npm run dynamo:init
+
+# 2. content-api (fuente de verdad)
+DYNAMODB_ENDPOINT=http://localhost:8000 AWS_REGION=us-east-1 \
+  SERIES_TABLE=firexp-dev-series EPISODES_TABLE=firexp-dev-episodes PORT=3003 node dist/main.js
+
+# 3. relay (tiempo real + sirve phone/videos)
+cd apps/relay && CONTENT_API_URL=http://localhost:3003/api/v1 PORT=3001 node dist/main.js
+
+# 4. dashboard (opcional)
+cd apps/content-dashboard && VITE_CONTENT_API_URL=http://localhost:3003/api/v1 npm run dev
+
+# 5. TV: abrir apps/fire-hack en Android Studio → instalar en el emulador/dispositivo
+```
+
+**Config de red (`apps/fire-hack/.../Config.kt`):**
+- Emulador TV → `RELAY_HOST = http://10.0.2.2:3001` (alias del host).
+- Fire TV físico → `RELAY_HOST = RELAY_LAN` (IP LAN de la máquina del relay).
+- `PHONE_HOST` = IP LAN siempre (para el QR del teléfono físico).
+- TV y teléfono deben estar en la **misma WiFi**.
+
+---
+
+## 10. Checklist del hackathon
+
+- [ ] Demo < 3 min (app en Fire TV / AVD)
+- [ ] Repo público + licencia open source
+- [ ] Descripción de qué hace y cómo funciona
+- [ ] Mini challenge **AWS Builder** — Bedrock en `prompt-generator`
+- [ ] Mini challenge **Open Source**

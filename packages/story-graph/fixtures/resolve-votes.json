@@ -1,0 +1,67 @@
+[
+  {
+    "description": "empty votes → default",
+    "votes": {},
+    "options": [
+      { "gesture": "hands_up",    "label": "Stand up",  "set": { "brave": "+1" } },
+      { "gesture": "crouch",      "label": "Hide",      "set": { "brave": "-1" } }
+    ],
+    "expected": "default"
+  },
+  {
+    "description": "clear winner",
+    "votes": { "1": "hands_up", "2": "hands_up", "3": "crouch" },
+    "options": [
+      { "gesture": "hands_up", "label": "Stand up", "set": { "brave": "+1" } },
+      { "gesture": "crouch",   "label": "Hide",     "set": { "brave": "-1" } }
+    ],
+    "expected": "hands_up"
+  },
+  {
+    "description": "tie → default",
+    "votes": { "1": "hands_up", "2": "crouch" },
+    "options": [
+      { "gesture": "hands_up", "label": "Stand up", "set": { "brave": "+1" } },
+      { "gesture": "crouch",   "label": "Hide",     "set": { "brave": "-1" } }
+    ],
+    "expected": "default"
+  },
+  {
+    "description": "winner not in options → default",
+    "votes": { "1": "lean_forward", "2": "lean_forward" },
+    "options": [
+      { "gesture": "hands_up", "label": "Stand up", "set": { "brave": "+1" } },
+      { "gesture": "crouch",   "label": "Hide",     "set": { "brave": "-1" } }
+    ],
+    "expected": "default"
+  },
+  {
+    "description": "single voter — wins",
+    "votes": { "1": "crouch" },
+    "options": [
+      { "gesture": "hands_up", "label": "Stand up", "set": { "brave": "+1" } },
+      { "gesture": "crouch",   "label": "Hide",     "set": { "brave": "-1" } }
+    ],
+    "expected": "crouch"
+  },
+  {
+    "description": "three-way tie → default",
+    "votes": { "1": "hands_up", "2": "crouch", "3": "lean_forward" },
+    "options": [
+      { "gesture": "hands_up",    "label": "A", "set": {} },
+      { "gesture": "crouch",      "label": "B", "set": {} },
+      { "gesture": "lean_forward","label": "C", "set": {} }
+    ],
+    "expected": "default"
+  },
+  {
+    "description": "majority of three options wins",
+    "votes": { "1": "lean_forward", "2": "lean_forward", "3": "crouch", "4": "hands_up" },
+    "options": [
+      { "gesture": "hands_up",    "label": "A", "set": {} },
+      { "gesture": "crouch",      "label": "B", "set": {} },
+      { "gesture": "lean_forward","label": "C", "set": {} }
+    ],
+    "expected": "lean_forward"
+  }
+]

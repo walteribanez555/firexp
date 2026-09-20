@@ -1,0 +1,122 @@
+[
+  {
+    "description": "default always matches",
+    "when": "default",
+    "flags": {},
+    "expected": true
+  },
+  {
+    "description": "default matches even with flags set",
+    "when": "default",
+    "flags": { "confident": 5, "united": -3 },
+    "expected": true
+  },
+  {
+    "description": "gte: flag >= N — pass",
+    "when": "confident >= 1",
+    "flags": { "confident": 1 },
+    "expected": true
+  },
+  {
+    "description": "gte: flag >= N — fail",
+    "when": "confident >= 2",
+    "flags": { "confident": 1 },
+    "expected": false
+  },
+  {
+    "description": "lte: flag <= N — pass",
+    "when": "confident <= -2",
+    "flags": { "confident": -3 },
+    "expected": true
+  },
+  {
+    "description": "lte: flag <= N — boundary",
+    "when": "confident <= -2",
+    "flags": { "confident": -2 },
+    "expected": true
+  },
+  {
+    "description": "lte: flag <= N — fail",
+    "when": "confident <= -2",
+    "flags": { "confident": -1 },
+    "expected": false
+  },
+  {
+    "description": "gt: strict greater than — pass",
+    "when": "united > 0",
+    "flags": { "united": 1 },
+    "expected": true
+  },
+  {
+    "description": "gt: strict greater than — fail at boundary",
+    "when": "united > 0",
+    "flags": { "united": 0 },
+    "expected": false
+  },
+  {
+    "description": "lt: strict less than — pass",
+    "when": "united < 0",
+    "flags": { "united": -1 },
+    "expected": true
+  },
+  {
+    "description": "eq: exact equality — pass",
+    "when": "confident == 0",
+    "flags": { "confident": 0 },
+    "expected": true
+  },
+  {
+    "description": "eq: exact equality — fail",
+    "when": "confident == 0",
+    "flags": { "confident": 1 },
+    "expected": false
+  },
+  {
+    "description": "missing flag defaults to 0 — pass",
+    "when": "absent == 0",
+    "flags": {},
+    "expected": true
+  },
+  {
+    "description": "missing flag defaults to 0 — fail",
+    "when": "absent >= 1",
+    "flags": {},
+    "expected": false
+  },
+  {
+    "description": "compound &&: both pass",
+    "when": "confident <= -2 && united >= 1",
+    "flags": { "confident": -3, "united": 2 },
+    "expected": true
+  },
+  {
+    "description": "compound &&: first fails",
+    "when": "confident <= -2 && united >= 1",
+    "flags": { "confident": 0, "united": 2 },
+    "expected": false
+  },
+  {
+    "description": "compound &&: second fails",
+    "when": "confident <= -2 && united >= 1",
+    "flags": { "confident": -3, "united": 0 },
+    "expected": false
+  },
+  {
+    "description": "compound &&: both fail",
+    "when": "confident <= -2 && united >= 1",
+    "flags": { "confident": 0, "united": 0 },
+    "expected": false
+  },
+  {
+    "description": "three-clause &&",
+    "when": "a >= 1 && b <= -1 && c == 2",
+    "flags": { "a": 1, "b": -2, "c": 2 },
+    "expected": true
+  },
+  {
+    "description": "three-clause && — one fails",
+    "when": "a >= 1 && b <= -1 && c == 2",
+    "flags": { "a": 1, "b": -2, "c": 3 },
+    "expected": false
+  }
+]

@@ -1,0 +1,102 @@
+{
+  "storyId": "episode1",
+  "title": "The House at the End of the Road",
+  "narrativeContext": "A family discovers an abandoned house during a road trip at dusk. Strange sounds and shifting shadows suggest they are not alone. The house holds secrets that change based on the group's collective courage, confidence, and unity.",
+  "desiredArc": {
+    "targetEnding": "ending_heroic",
+    "tensionCurve": [3, 6, 9],
+    "flagTargets": {
+      "violent":    { "direction": "+", "weight": 0.35 },
+      "confident":  { "direction": "+", "weight": 0.40 },
+      "united":     { "direction": "+", "weight": 0.25 }
+    }
+  },
+  "chapters": {
+    "ch1": {
+      "tensionLevel": 3,
+      "characterMood": "curious, slightly uneasy",
+      "setting": "dusk, rural road, abandoned house with an open door",
+      "decisions": {
+        "ch1_pre_1": {
+          "nudgeTarget": "hands_up",
+          "nudgeStrength": 0.6,
+          "promptTemplates": {
+            "toward_hands_up": [
+              "A flicker of light inside — someone might need help.",
+              "The youngest tugs your sleeve: 'Let's check it out.'",
+              "Through the window: movement. It could be a person.",
+              "Your instinct says act. The door is already open."
+            ],
+            "toward_crouch": [
+              "The silence here feels wrong. Very wrong.",
+              "No tire tracks. No signs of recent life. Nothing.",
+              "Something about this place makes you want to wait.",
+              "Your gut says: don't go in."
+            ],
+            "neutral": [
+              "The door is open. The house is quiet.",
+              "You see the door ajar in the fading light."
+            ]
+          }
+        }
+      }
+    },
+    "ch2": {
+      "tensionLevel": 6,
+      "characterMood": "anxious, hyper-alert",
+      "setting": "inside the house, a heavy door leads to the basement",
+      "decisions": {
+        "ch2_pre_1": {
+          "nudgeTarget": "hands_up",
+          "nudgeStrength": 0.55,
+          "promptTemplates": {
+            "toward_hands_up": [
+              "A voice. Faint. It's coming from below.",
+              "The sound is rhythmic — a pattern. Someone is signaling.",
+              "Your heart races, but someone down there needs you.",
+              "It could be a child. The noise is too regular to be random."
+            ],
+            "toward_crouch": [
+              "The noise stops the moment you reach the door.",
+              "Every step toward the basement feels heavier than the last.",
+              "Something about this feels deliberate. Like a trap.",
+              "Your body is telling you to stop."
+            ],
+            "neutral": [
+              "A sound rises from below. Do you go down?",
+              "There is a noise from the basement."
+            ]
+          }
+        },
+        "ch2_during_1": {
+          "nudgeTarget": "hands_up",
+          "nudgeStrength": 0.7,
+          "promptTemplates": {
+            "toward_hands_up": [
+              "Stronger together — the footsteps are getting closer.",
+              "This is not the moment to split up.",
+              "The shadow moves toward one of you. Don't face it alone.",
+              "Whatever is here, you're better as one."
+            ],
+            "toward_crouch": [
+              "Two exits, two paths — you could cover more ground.",
+              "Splitting up might be the smarter move here.",
+              "You could draw it away while the others escape.",
+              "Separate and meet outside — faster and safer."
+            ],
+            "neutral": [
+              "Footsteps above. Stay together or split up?",
+              "You hear movement. The group must decide now."
+            ]
+          }
+        }
+      }
+    },
+    "ch3": {
+      "tensionLevel": 9,
+      "characterMood": "desperate, determined",
+      "setting": "the exit is visible, but blocked",
+      "decisions": {}
+    }
+  }
+}
