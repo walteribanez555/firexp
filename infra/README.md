@@ -31,6 +31,20 @@ All AWS infrastructure is managed with **AWS CDK** in `infra/cdk`.
 | HTTP API | `firexp-{env}-prompt-api` | API Gateway v2 |
 | Secrets Manager | `firexp/{env}/prompt-generator` | Optional placeholder (set `-c createSecret=true`) |
 
+### FirexpRelayStack (`lib/firexp-relay-stack.ts`)
+
+| Resource | Name pattern | Notes |
+|---|---|---|
+| VPC | `firexp-{env}-vpc` | dev: public subnets only, no NAT · prod: +1 NAT gateway |
+| ECS cluster | `firexp-{env}-relay-cluster` | Fargate |
+| ECS Fargate service | `firexp-{env}-relay` | WebSocket relay (single task; state in memory) |
+| Container image | CDK asset (bootstrap ECR) | Built & pushed from `apps/relay/Dockerfile` via `ContainerImage.fromAsset` at deploy time — no manual build/push |
+| ALB | — | prod only (`RelayLoadBalancerDns` output); dev uses the task's ephemeral public IP |
+
+> Deploy is autonomous: `cdk deploy` builds/pushes the image and imports the
+> content-api URL from `FirexpContentStack` automatically. See `infra/cdk/README.md`
+> for the DEV vs PROD topology.
+
 ---
 
 ## Architecture

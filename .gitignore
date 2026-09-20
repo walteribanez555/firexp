@@ -44,8 +44,3 @@ apps/relay/rooms/
 
 # Third-party test media (reproducible sample clips — not committed)
 apps/relay/public/videos/
-
-# Terraform provider cache & state
-.terraform/
-*.tfstate
-*.tfstate.*

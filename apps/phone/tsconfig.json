@@ -10,5 +10,5 @@
       "@fire-stick/types": ["../../packages/types/src/index.ts"]
     }
   },
-  "include": ["web", "src"]
+  "include": ["web"]
 }
