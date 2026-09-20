@@ -62,6 +62,49 @@ jobs:
           STORAGE: memory
           NODE_ENV: test
 
+  # ─── CDK: build, synth & test the infrastructure ──────────────────────────
+  cdk:
+    name: CDK synth & test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      # Root deps + types are required so NodejsFunction bundling (esbuild) can
+      # resolve @fire-stick/types when synth builds the Lambda assets.
+      - name: Install root deps
+        run: npm ci
+
+      - name: Build @fire-stick/types
+        run: npm run build --workspace @fire-stick/types
+
+      - name: Install CDK deps
+        working-directory: infra/cdk
+        run: npm ci --no-audit --no-fund
+
+      - name: Compile
+        working-directory: infra/cdk
+        run: npx tsc --noEmit
+
+      # Synth every stack for both stages (no AWS credentials needed).
+      - name: Synth (dev)
+        working-directory: infra/cdk
+        run: npx cdk synth --all -c environment=dev >/dev/null
+
+      - name: Synth (prod)
+        working-directory: infra/cdk
+        run: npx cdk synth --all -c environment=prod >/dev/null
+
+      - name: Test
+        working-directory: infra/cdk
+        run: npm test
+
   # ─── Android: compile Kotlin (optional, never blocks) ─────────────────────
   android:
     name: Android compile check

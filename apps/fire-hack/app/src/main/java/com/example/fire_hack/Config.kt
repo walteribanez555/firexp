@@ -16,16 +16,22 @@ object Config {
      * Emulator note: for the Android TV AVD use "http://10.0.2.2:3001" instead
      * (the emulator can't reach the host LAN IP; 10.0.2.2 is its host-loopback alias).
      */
-    private const val RELAY_LAN = "http://192.168.0.12:3001" // LAN IP of the relay machine
-
     /**
-     * Host the TV app connects to (HTTP + WebSocket).
-     *  - Emulator TV (current): 10.0.2.2 — the emulator's alias for the host loopback.
-     *  - Physical Fire TV: set this to RELAY_LAN instead.
+     * Deployed relay (ECS Fargate, dev). Public IP — reachable from the emulator,
+     * a physical Fire TV, and phones alike, so RELAY_HOST and PHONE_HOST are the same.
+     *
+     * NOTE: this dev task has an EPHEMERAL public IP that changes on every relay
+     * redeploy/restart. Get the current one with:
+     *   bash infra/scripts/relay-ip.sh
+     * (For local development instead, use "http://10.0.2.2:3001" on the emulator
+     * or the host LAN IP on a physical device.)
      */
-    const val RELAY_HOST = "http://10.0.2.2:3001"
+    private const val RELAY_CLOUD = "http://3.86.97.226:3001" // firexp-dev-relay (Fargate)
+
+    /** Host the TV app connects to (HTTP + WebSocket). */
+    const val RELAY_HOST = RELAY_CLOUD
     val RELAY_WS get() = RELAY_HOST.replace("http", "ws")
 
-    /** Host embedded in the QR the (physical) phone scans — always the relay machine's LAN IP. */
-    const val PHONE_HOST = RELAY_LAN
+    /** Host embedded in the QR the phone scans. */
+    const val PHONE_HOST = RELAY_CLOUD
 }

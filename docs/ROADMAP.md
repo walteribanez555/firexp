@@ -119,7 +119,7 @@ AWS Builder defendible.
 ---
 
 ## No tocar
-Hono · DynamoDB · S3/CloudFront · CDK/Terraform · React Flow — bien elegidos; cambiarlos no mueve ningún criterio.
+Hono · DynamoDB · S3/CloudFront · CDK · React Flow — bien elegidos; cambiarlos no mueve ningún criterio.
 
 ## Estimación
 ~11 días para 2–3 personas → deja ~2 semanas para contenido + video (lo que realmente puntúa).

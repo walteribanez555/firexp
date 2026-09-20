@@ -1,13 +1,14 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { Video, CheckCircle, XCircle, EyeOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { NodeActionsToolbar } from '../../node-actions';
 import type { ChapterNodeData } from '../../lib/episode-to-flow';
 
 interface Props extends NodeProps {
   isHighlighted?: boolean;
 }
 
-export function ChapterNode({ data, selected, isHighlighted }: Props) {
+export function ChapterNode({ id, data, selected, isHighlighted }: Props) {
   const d = data as ChapterNodeData;
   const { chapter, index, shadowedVariantIndices } = d;
 
@@ -18,6 +19,7 @@ export function ChapterNode({ data, selected, isHighlighted }: Props) {
         selected ? 'border-primary' : isHighlighted ? 'border-amber' : 'border-border',
       ].join(' ')}
     >
+      <NodeActionsToolbar id={id} selected={selected} />
       <Handle type="target" position={Position.Top} />
       <div className="flex items-center gap-2 bg-secondary/60 px-3 py-2 rounded-t-md">
         <Video className="h-4 w-4 text-muted-foreground shrink-0" />

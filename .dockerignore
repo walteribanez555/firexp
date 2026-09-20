@@ -1,0 +1,14 @@
+# Keep the Docker build context small and reproducible.
+**/node_modules
+**/dist
+**/.turbo
+infra/cdk/cdk.out
+**/*.tsbuildinfo
+.git
+.github
+# Large local media (served from S3/CloudFront in prod)
+apps/relay/public/videos
+apps/relay/rooms
+# Android build outputs
+apps/fire-hack/.gradle
+apps/fire-hack/**/build

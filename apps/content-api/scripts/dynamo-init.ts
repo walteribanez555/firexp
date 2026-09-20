@@ -218,6 +218,7 @@ async function seedSeries(): Promise<void> {
       id:           s.id,
       title:        s.title,
       description:  s.description,
+      category:     s.category ?? '',
       thumbnailUrl: s.thumbnailUrl,
       episodes:     s.episodes,
       createdAt:    now,

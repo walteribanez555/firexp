@@ -1,11 +1,15 @@
-# infra/cdk — Firexp Content-API CDK Stack
+# infra/cdk — Firexp CDK Stacks
 
-AWS CDK (TypeScript) infrastructure for the `content-api` service.
+AWS CDK (TypeScript) infrastructure for the Firexp platform. All AWS resources
+are managed here — there is no other IaC tool in use.
 
-> **Coexistence note:** `infra/terraform/` manages the Bedrock/prompt-generator
-> backend (fire-hack hackathon) and is completely independent. CDK does not touch
-> any Terraform-managed resources, and Terraform does not touch any CDK-managed
-> resources. The two tools share the same AWS account but manage disjoint resource sets.
+Three stacks are synthesised together:
+
+| Stack | What it owns |
+|---|---|
+| **FirexpContentStack** | DynamoDB (series/episodes/sessions) + S3 + CloudFront (OAC) + content-api Lambda + HTTP API |
+| **FirexpAiStack** | Bedrock IAM managed policy + DynamoDB prompt-cache + prompt-generator Lambda + HTTP API + optional Secrets Manager |
+| **FirexpRelayStack** | ECS Fargate WebSocket relay (VPC + ECR + cluster + service). Topology differs by stage — see [Relay: DEV vs PROD](#relay-websocket--dev-vs-prod). |
 
 ---
 
@@ -32,6 +36,14 @@ series      episodes         content
                                │
                                ▼
                     Fire TV Player / browser
+
+HTTP API v2  (firexp-{env}-prompt-api)
+         │
+         ▼
+Lambda  (firexp-{env}-prompt-generator)
+    │           │
+    ▼           ▼
+Bedrock    DynamoDB  (firexp-{env}-prompts — prompt cache, TTL)
 ```
 
 ### Private bucket + CloudFront (OAC) model
@@ -69,44 +81,71 @@ The S3 bucket's CORS rule is configured for browser multipart uploads:
 | CORS field | Value | Reason |
 |---|---|---|
 | `allowedMethods` | PUT, GET, HEAD, POST | PUT=upload parts; POST=initiate/complete MPU; GET/HEAD=presigned reads |
-| `allowedOrigins` | `["*"]` (dev) | Restrict to dashboard origin in prod (see TODO in code) |
+| `allowedOrigins` | `["*"]` (dev) | Restrict to dashboard origin in prod |
 | `allowedHeaders` | `["*"]` | Browser preflight may include arbitrary SDK headers |
-| `exposedHeaders` | `["ETag"]` | **Required** — the browser AWS SDK reads each part's ETag to assemble the `CompleteMultipartUpload` call. Without this, the browser cannot read the ETag from the CORS response and multipart uploads silently fail. |
+| `exposedHeaders` | `["ETag"]` | **Required** — the browser AWS SDK reads each part's ETag to assemble the `CompleteMultipartUpload` call. Without this, multipart uploads silently fail. |
 | `maxAge` | 3000 | Preflight cache TTL (seconds) |
 
-### How CDN_BASE flows to the Lambda
+---
 
-The CloudFront distribution domain name is resolved at CDK synth time as a
-CloudFormation `Fn::GetAtt` on the distribution resource. The Lambda's
-`CDN_BASE` environment variable is set to `https://${contentDistribution.distributionDomainName}`,
-so at deploy time it resolves to something like:
-`https://d1a2b3c4d5e6f7.cloudfront.net`.
+## Relay (WebSocket) — DEV vs PROD
 
-The Lambda uses `CDN_BASE` to build the public playback URL returned to clients:
-```
-publicUrl = `${CDN_BASE}/${s3Key}`
-```
+The relay (`apps/relay`) is a **stateful** real-time service: it keeps each
+room's state **in memory** (a "dumb forwarder" with a `RoomState` per room).
+That single fact drives every deployment decision below — it must run as a
+**single task**; scaling horizontally would split a room's TV and phones across
+tasks and break it (a per-client ALB sticky cookie does *not* co-locate all the
+devices of one room). True scaling would need shared pub/sub (e.g. ElastiCache)
+and is intentionally out of scope.
 
-`CONTENT_BUCKET` continues to point at the private S3 bucket — the Lambda uses it
-to generate presigned PUT URLs for uploads. The bucket is never exposed publicly;
-CloudFront is the only entity that can issue GETs against it.
+Because there is no always-on requirement during the hackathon, the stage picks
+a deliberately different topology to trade durability for cost:
 
-### Cost and PriceClass notes
-
-| PriceClass | Edge locations | ~Cost vs ALL |
+| Aspect | **DEV** (`environment=dev`) | **PROD** (`environment=prod`) |
 |---|---|---|
-| `PRICE_CLASS_100` (default) | US, Canada, Europe, Israel | Cheapest — good for Fire TV launch |
-| `PRICE_CLASS_200` | PRICE_CLASS_100 + APAC, Middle East, Africa | ~10-20% more |
-| `PRICE_CLASS_ALL` | All worldwide edge locations | Most expensive |
+| Goal | cheap, for testing/development | durable, load-balanced |
+| Fargate task | 1 (256 CPU / 512 MB) | 1 (512 CPU / 1024 MB) |
+| Exposure | **public IP on the task, no ALB** | **Application Load Balancer** (stable DNS) |
+| Subnets / NAT | public subnets, **`natGateways: 0`** | private task + **1 NAT gateway** |
+| Reach it via | ephemeral task IP → `infra/scripts/relay-ip.sh` | ALB DNS (`RelayLoadBalancerDns` output) |
+| TLS | none → `ws://` (fine for emulator/LAN) | HTTP today; add ACM cert + `:443` for `wss://` |
+| Deploy behaviour | `minHealthyPercent: 0` (stop-then-start) | `minHealthyPercent: 100` + circuit breaker |
+| Idle WS timeout | n/a (no ALB) | ALB `idleTimeout: 1h` (+ app ping/pong) |
+| Rough cost | **~$9/mo** running (or ~$0 at `desiredCount 0`) | **~$57/mo** (ALB + NAT + Fargate) |
 
-Override at synth time:
+**Why the dev shape saves money:** dropping the ALB (~$16/mo) and the NAT
+gateway (~$32/mo) removes the two fixed costs; the task egresses to the public
+content-api directly through the Internet Gateway using its own public IP.
+
+**Finding the dev task (its IP is ephemeral):**
+
 ```bash
-npx cdk synth -c environment=prod -c cdnPriceClass=PRICE_CLASS_ALL
+bash infra/scripts/relay-ip.sh                 # defaults: firexp-dev-relay-cluster / firexp-dev-relay
+# → prints http://<ip>:3001 / ws://<ip>:3001 — paste into fire-hack Config.RELAY_HOST/PHONE_HOST
 ```
 
-CloudFront data transfer pricing is roughly $0.0085–$0.012 / GB for PRICE_CLASS_100.
-For a hackathon / dev environment the free tier (1 TB / month for 12 months) covers
-most usage.
+For a stable dev hostname, add an EventBridge (ECS Task State Change) → Lambda
+rule that upserts a Route53 A record on task start (not included; needs a domain).
+
+### First deploy (image must exist)
+
+The service references the ECR image tag `${env}-latest`, so an image must be
+pushed **before** the service can stabilise:
+
+```bash
+cd infra/cdk && npx cdk deploy FirexpRelayStack -c environment=dev   # creates VPC/cluster/ECR/service
+# then build + push (or let CI do it):
+aws ecr get-login-password | docker login --username AWS --password-stdin <acct>.dkr.ecr.us-east-1.amazonaws.com
+docker build -f apps/relay/Dockerfile -t <repoUri>:dev-latest .      # context = repo root
+docker push <repoUri>:dev-latest
+aws ecs update-service --cluster firexp-dev-relay-cluster --service firexp-dev-relay --force-new-deployment
+```
+
+Pass the deployed content-api URL so the relay can forward sessions:
+
+```bash
+npx cdk deploy FirexpRelayStack -c environment=dev -c contentApiUrl=https://xxxx.execute-api.us-east-1.amazonaws.com
+```
 
 ---
 
@@ -134,7 +173,7 @@ npx cdk synth -c environment=dev
 
 # 4. Deploy (creates real AWS resources — DO NOT run this automatically)
 #    Review the diff first: npx cdk diff -c environment=prod
-npx cdk deploy FirexpContentStack -c environment=prod
+npx cdk deploy --all -c environment=prod
 ```
 
 > **DO NOT auto-apply.** Always run `cdk diff` and review the plan before
@@ -160,96 +199,61 @@ The `createLambda` context flag (default `true`) gates Lambda + API creation:
 npx cdk synth -c environment=dev -c createLambda=false
 ```
 
-CloudFront, the S3 bucket, and CORS are always synthesized regardless of
-`createLambda`.
+The `createSecret` context flag (default `false`) gates Secrets Manager creation:
+
+```bash
+npx cdk synth -c environment=dev -c createSecret=true
+```
 
 ---
 
-## How the Lambda bundles content-api
+## Enable Bedrock Model Access (REQUIRED before using AI features)
 
-`NodejsFunction` uses **esbuild under the hood** — it bundles
-`apps/content-api/src/index.ts` at **deploy time**, not at synth time.
-`cdk synth` therefore succeeds even if the app source has never been compiled.
+IAM permissions alone are **not** enough — each model must be individually
+approved in the AWS Console:
 
-Key bundling settings:
+1. Open **Amazon Bedrock** → **Model access** → **Manage model access**.
+2. Tick `Claude Haiku 4.5` and `Claude Sonnet 4.6` under Anthropic.
+3. Click **Request model access** and wait for **Access granted** status.
 
-| Setting | Value | Reason |
-|---------|-------|--------|
-| `entry` | `apps/content-api/src/index.ts` | Lambda entrypoint |
-| `handler` | `handler` | Named export in the entrypoint |
-| `projectRoot` | repo root | Resolves monorepo workspace packages |
-| `depsLockFilePath` | repo root `package-lock.json` | Correct lockfile for workspace |
-| `externalModules` | `@aws-sdk/*` | Already in Lambda runtime; keeps bundle small |
-| `minify` | `true` in prod | Smaller cold-start bundle |
-
----
-
-## Pointing the dashboard / Fire TV app at the API
-
-After deploy, the API endpoint is in the CloudFormation output `ContentApiUrl`
-and exported as `firexp-{env}-content-api-url`. Retrieve it:
-
-```bash
-aws cloudformation describe-stacks \
-  --stack-name FirexpContentStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`ContentApiUrl`].OutputValue' \
-  --output text
-```
-
-The CloudFront CDN base URL is in `ContentCdnUrl` (export `firexp-{env}-content-cdn-url`):
-
-```bash
-aws cloudformation describe-stacks \
-  --stack-name FirexpContentStack \
-  --query 'Stacks[0].Outputs[?OutputKey==`ContentCdnUrl`].OutputValue' \
-  --output text
-```
-
-Set `ContentApiUrl` as the `API_BASE_URL` in the dashboard / Fire TV build pipeline.
-`ContentCdnUrl` is also injected into the Lambda as `CDN_BASE` automatically.
+> Without this step, Bedrock returns `AccessDeniedException` at runtime even
+> when the IAM policy is correct.
 
 ---
 
 ## Resources created
 
+### FirexpContentStack
+
 | Resource | Name |
 |----------|------|
 | DynamoDB table | `firexp-{env}-series` |
-| DynamoDB table | `firexp-{env}-episodes` |
-| DynamoDB GSI (on episodes) | `seriesId-number-index` |
+| DynamoDB table | `firexp-{env}-episodes` (+ `seriesId-number-index` GSI) |
+| DynamoDB table | `firexp-{env}-sessions` (+ `byEpisode` GSI) |
 | S3 bucket (private) | `firexp-{env}-content` |
-| CloudFront OAC | _(CDK-managed, no custom name)_ |
-| CloudFront distribution | _(CDK-managed; domain in `ContentCdnUrl` output)_ |
+| CloudFront distribution | _(domain in `ContentCdnUrl` output)_ |
 | Lambda function | `firexp-{env}-content-api` |
 | HTTP API v2 | `firexp-{env}-content-api` |
 
-### IAM grants (least-privilege)
+### FirexpAiStack
 
-- `seriesTable.grantReadWriteData(lambda)` — DynamoDB CRUD on series table
-- `episodesTable.grantReadWriteData(lambda)` — DynamoDB CRUD on episodes table
-- `contentBucket.grantReadWrite(lambda)` — S3 GetObject / PutObject / DeleteObject (for presigned URL generation)
-- OAC bucket policy — `s3:GetObject` Allow for `cloudfront.amazonaws.com`, conditioned on the distribution ARN
+| Resource | Name |
+|----------|------|
+| IAM ManagedPolicy | `firexp-{env}-bedrock-invoke` |
+| DynamoDB table | `firexp-{env}-prompts` (PK: `cacheKey`, TTL: `ttl`) |
+| Lambda function | `firexp-{env}-prompt-generator` |
+| HTTP API v2 | `firexp-{env}-prompt-api` |
+| Secrets Manager secret | `firexp/{env}/prompt-generator` _(optional)_ |
 
-No `*` actions; no `iam:*`; nothing broader than the service scope.
+### FirexpRelayStack
 
----
-
-## Adding a custom domain and ACM certificate
-
-The distribution ships without a custom domain to keep the stack self-contained.
-To add one, edit `firexp-content-stack.ts` and uncomment/add these properties on
-`ContentDistribution`:
-
-```typescript
-// The ACM certificate MUST be in us-east-1, regardless of the stack region.
-import * as acm from 'aws-cdk-lib/aws-certificatemanager';
-
-// ...inside the Distribution props:
-domainNames: ['cdn.firexp.io'],
-certificate: acm.Certificate.fromCertificateArn(
-  this, 'Cert', 'arn:aws:acm:us-east-1:557690620729:certificate/<id>'
-),
-```
+| Resource | Name |
+|----------|------|
+| VPC | `firexp-{env}-vpc` (dev: public only, no NAT · prod: +1 NAT) |
+| ECR repository | `firexp-{env}-relay` |
+| ECS cluster | `firexp-{env}-relay-cluster` |
+| ECS Fargate service | `firexp-{env}-relay` |
+| ALB | _(prod only — `RelayLoadBalancerDns` output)_ |
 
 ---
 
@@ -260,25 +264,16 @@ npm test
 ```
 
 Uses Jest + `aws-cdk-lib/assertions` to assert resource properties without
-deploying anything. Test coverage includes:
+deploying anything. 64 tests across three test files cover:
 
-- Synthesis (dev + prod)
-- DynamoDB tables + GSI
-- S3 bucket: BLOCK_ALL public access, SSL enforcement, CORS (PUT/GET/HEAD/POST + ETag expose)
-- CloudFront distribution: present, HTTPS redirect, PRICE_CLASS_100, OAC (not OAI), bucket policy grant
+- Synthesis (dev + prod for both stacks)
+- DynamoDB tables, GSI, TTL, billing modes
+- Bedrock IAM policy: inference-profile ARNs, foundation-model ARNs, discovery
+- S3 bucket: BLOCK_ALL public access, SSL enforcement, CORS + ETag expose
+- CloudFront: HTTPS redirect, PRICE_CLASS_100, OAC (not OAI), bucket policy
 - Lambda: runtime, env vars, CDN_BASE wired, CONTENT_BUCKET separate from CDN
-- HTTP API v2 name and protocol
-- Stack tags
-- CloudFormation outputs (all 5 exports including ContentCdnUrl)
-
----
-
-## Infra coexistence
-
-```
-infra/
-  terraform/   ← Bedrock + DynamoDB prompts table (fire-hack prompt-generator)
-                 Managed by Terraform. Do NOT touch with CDK.
-  cdk/         ← content-api (this directory)
-                 Managed by CDK. Do NOT touch with Terraform.
-```
+- HTTP API v2: name and protocol
+- Secrets Manager: absent by default, present with `createSecret=true`
+- Relay: dev topology (no NAT, no ALB, public IP, port 3001 open) vs prod (NAT + ALB + `/health`)
+- Stack tags (Project / Environment / ManagedBy:CDK)
+- CloudFormation outputs / export names

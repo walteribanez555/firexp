@@ -90,7 +90,7 @@ export function episodeToFlow(episode: EpisodeDetail): { nodes: FlowNode[]; edge
         type: 'chapter',
         chapter,
         index: idx,
-        shadowedVariantIndices: [],   // populated later by FlowRoute after analysis
+        shadowedVariantIndices: [],   // populated later by the flow editor after analysis
       } satisfies ChapterNodeData,
     });
 
@@ -113,7 +113,7 @@ export function episodeToFlow(episode: EpisodeDetail): { nodes: FlowNode[]; edge
           type: 'decision',
           decision,
           chapterId: chapter.id,
-          inconsequential: false,     // populated later by FlowRoute after analysis
+          inconsequential: false,     // populated later by the flow editor after analysis
         } satisfies DecisionNodeData,
       });
 

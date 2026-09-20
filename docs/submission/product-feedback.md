@@ -40,16 +40,10 @@ _Devpost requires feedback on **every** tool/API/SDK used. One entry each: what 
 - **Again:** yes.
 
 ## AWS CDK
-- **Used for:** DynamoDB, S3, CloudFront(OAC), Lambda (NodejsFunction), HTTP API — all IaC.
-- **Worked:** `grant*` helpers and `S3BucketOrigin.withOriginAccessControl()` are excellent; `cdk synth` in CI catches drift.
+- **Used for:** all infrastructure — DynamoDB (series/episodes/sessions/prompt-cache), S3, CloudFront (OAC), Bedrock IAM managed policy, Lambda (NodejsFunction) for content-api and prompt-generator, HTTP API v2. Two stacks: `FirexpContentStack` and `FirexpAiStack`.
+- **Worked:** `grant*` helpers and `S3BucketOrigin.withOriginAccessControl()` are excellent; `cdk synth` in CI catches drift; a single IaC tool across the whole project eliminates toolchain friction.
 - **Needs work:** NodejsFunction bundling assumptions in a monorepo (projectRoot/depsLockFilePath) took trial and error.
 - **Again:** yes.
-
-## Terraform
-- **Used for:** Bedrock IAM policy + the prompt-generator path.
-- **Worked:** clear, reviewable plans.
-- **Needs work:** having both CDK and Terraform in one repo is friction; we'd standardize on one for a real build.
-- **Again:** situationally.
 
 ## Hono
 - **Used for:** relay HTTP + content-api + prompt-generator (Lambda + local via `@hono/node-server`).

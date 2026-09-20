@@ -72,7 +72,7 @@ PIDS+=($!)
 label "$C_MAGENTA" "relay" "Starting on :3001…"
 (
   cd "$REPO_ROOT/apps/relay"
-  CONTENT_API_URL=http://localhost:3003/api/v1 \
+  CONTENT_API_URL=http://localhost:3003 \
   PORT=3001 \
   npm run dev 2>&1 | sed "s/^/$(printf "${C_MAGENTA}[relay]${C_RESET} ")/"
 ) &

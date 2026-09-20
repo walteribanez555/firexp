@@ -142,6 +142,8 @@ export interface SeriesSummary {
   id:           string;
   title:        string;
   description:  string;
+  /** Optional grouping label (e.g. "Horror", "Sci-Fi"). */
+  category?:    string;
   thumbnailUrl: string;
   episodes:     EpisodeSummary[];
 }

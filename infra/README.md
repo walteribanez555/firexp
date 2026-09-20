@@ -1,31 +1,60 @@
 # infra — Fire Hack AWS Infrastructure
 
-Terraform code to provision AWS resources for the **fire-hack** hackathon project's
-Bedrock / prompt-generator backend.
+All AWS infrastructure is managed with **AWS CDK** in `infra/cdk`.
 
-> **IMPORTANT:** Review `terraform plan` before any apply.  
-> Nothing here is auto-applied. No remote backend is configured — state is local by default.
+> **IMPORTANT:** Review `cdk diff` before any deploy.  
+> Nothing here is auto-applied. No remote backend is required — CDK uses CloudFormation.
+
+---
+
+## Stacks
+
+### FirexpContentStack (`lib/firexp-content-stack.ts`)
+
+| Resource | Name pattern | Notes |
+|---|---|---|
+| DynamoDB | `firexp-{env}-series` | Series catalogue |
+| DynamoDB | `firexp-{env}-episodes` | Episode graph + `seriesId-number-index` GSI |
+| DynamoDB | `firexp-{env}-sessions` | Single-table sessions + `byEpisode` GSI |
+| S3 | `firexp-{env}-content` | Private video bucket (OAC only) |
+| CloudFront | — | CDN in front of the S3 bucket (OAC, TLS 1.2) |
+| Lambda | `firexp-{env}-content-api` | NodejsFunction — Hono content API |
+| HTTP API | `firexp-{env}-content-api` | API Gateway v2 |
+
+### FirexpAiStack (`lib/firexp-ai-stack.ts`)
+
+| Resource | Name pattern | Notes |
+|---|---|---|
+| IAM ManagedPolicy | `firexp-{env}-bedrock-invoke` | InvokeModel + InvokeModelWithResponseStream on inference profiles AND foundation models; discovery actions on `*` |
+| DynamoDB | `firexp-{env}-prompts` | Prompt cache; PK `cacheKey`, TTL `ttl`, PAY_PER_REQUEST |
+| Lambda | `firexp-{env}-prompt-generator` | NodejsFunction — Hono + Bedrock prompt generator |
+| HTTP API | `firexp-{env}-prompt-api` | API Gateway v2 |
+| Secrets Manager | `firexp/{env}/prompt-generator` | Optional placeholder (set `-c createSecret=true`) |
 
 ---
 
 ## Architecture
 
 ```
-Fire TV App (Vega OS)
+Fire TV App / Phone
        │
        ▼
-Lambda Function URL (HTTPS)
+HTTP API (API Gateway v2)
        │
-       ├─► Amazon Bedrock  (Claude Haiku 4.5 / Sonnet 4.6)
+       ├─► Lambda: prompt-generator
+       │       ├─► Amazon Bedrock  (Claude Haiku 4.5 / Sonnet 4.6)
+       │       └─► DynamoDB  (firexp-{env}-prompts — prompt cache with TTL)
+       │               └─► (optional) Secrets Manager
        │
-       └─► DynamoDB  (fire-hack-prompts — prompt cache with TTL)
-                │
-                └─► (optional) Secrets Manager
+       └─► Lambda: content-api
+               ├─► DynamoDB  (series / episodes / sessions)
+               ├─► S3 (private content bucket)
+               └─► Amazon Bedrock  (ConverseCommand — recap endpoint)
 ```
 
 ---
 
-## Model IDs
+## Bedrock model IDs
 
 These are **cross-region inference profile** IDs invoked directly as `modelId`:
 
@@ -35,15 +64,7 @@ These are **cross-region inference profile** IDs invoked directly as `modelId`:
 | `us.anthropic.claude-sonnet-4-6` | Secondary — higher quality |
 
 Both models **incur per-token AWS cost** when invoked.  
-Neither is free-tier eligible.  Monitor usage in the AWS Billing console.
-
----
-
-## Prerequisites
-
-- [Terraform >= 1.5](https://developer.hashicorp.com/terraform/install) — `terraform version`
-- AWS CLI configured: `aws sts get-caller-identity` should return account `557690620729`
-- Default profile → IAM user `infra-deploy` (or set `AWS_PROFILE=infra-deploy`)
+Neither is free-tier eligible. Monitor usage in the AWS Billing console.
 
 ---
 
@@ -57,119 +78,104 @@ IAM permissions alone are **not** enough — each model must be individually app
 4. Tick both:
    - `Claude Haiku 4.5` (maps to `claude-haiku-4-5-20251001-v1:0`)
    - `Claude Sonnet 4.6` (maps to `claude-sonnet-4-6`)
-5. Click **Request model access** and wait for **Access granted** status (usually instant for Anthropic models).
-6. Repeat for any additional models added to `var.model_ids`.
+5. Click **Request model access** and wait for **Access granted** status.
+6. Repeat for any additional models.
 
 > Without this step, Bedrock will return `AccessDeniedException` at runtime even if the IAM policy is correct.
 
 ---
 
-## Build the Lambda ZIP
+## Prerequisites
 
-The Lambda resources are gated behind `create_lambda = true`.  
-Build the artifact first:
+- Node.js ≥ 18
+- AWS CLI configured: `aws sts get-caller-identity` should return account `557690620729`
+- Default profile → IAM user `infra-deploy` (or set `AWS_PROFILE=infra-deploy`)
+
+---
+
+## CDK Workflow
 
 ```bash
-cd apps/prompt-generator
+# Navigate to the CDK root
+cd infra/cdk
+
+# Install dependencies
 npm install
-npm run build:lambda:prod          # compiles TypeScript → dist/index.js (CommonJS)
-zip -j dist/prompt-generator-lambda.zip dist/index.js
-```
 
-The resulting ZIP path matches the default `lambda_zip_path` variable:
-`../../apps/prompt-generator/dist/prompt-generator-lambda.zip` (relative to `infra/terraform/`).
+# Build TypeScript
+npm run build
+
+# Synthesise (dry-run, no AWS calls required)
+npx cdk synth -c environment=dev
+
+# Preview changes against a deployed stack
+npx cdk diff -c environment=dev
+
+# Deploy (creates real AWS resources — incurs cost)
+npx cdk deploy --all -c environment=dev
+
+# Run tests
+npm test
+```
 
 ---
 
-## Terraform Workflow
+## Feature Flags (CDK context)
 
-```bash
-# 1. Navigate to the Terraform root
-cd infra/terraform
-
-# 2. Copy and edit variables
-cp terraform.tfvars.example terraform.tfvars
-# Edit terraform.tfvars — at minimum set create_lambda = true after building the ZIP
-
-# 3. Initialize (downloads the AWS provider, no remote backend)
-terraform init -backend=false
-
-# 4. Format check (CI-safe; exits non-zero if formatting is wrong)
-terraform fmt -check -recursive
-
-# 5. Validate syntax and references (no AWS calls)
-terraform validate
-
-# 6. Preview changes — READ THIS OUTPUT before applying
-terraform plan
-
-# 7. Apply (creates real AWS resources — incurs cost)
-terraform apply
-```
-
-> **Tip:** Run `terraform plan -out=tfplan && terraform apply tfplan` to ensure  
-> the apply is exactly what you reviewed.
-
----
-
-## Feature Flags
-
-| Variable | Default | Effect |
+| Context key | Default | Effect |
 |---|---|---|
-| `create_lambda` | `false` | Creates Lambda function, IAM role, function URL, CloudWatch log group |
-| `create_secret` | `false` | Creates Secrets Manager placeholder secret |
+| `environment` | `dev` | Deployment stage prefix (`firexp-{env}-*`) |
+| `createLambda` | `true` | Set `false` to synth without a build artifact |
+| `createSecret` | `false` | Set `true` to create the Secrets Manager placeholder |
+| `cdnPriceClass` | `PRICE_CLASS_100` | CloudFront price class |
 
-Leave both `false` to provision only DynamoDB + Bedrock IAM policy (safe bootstrap state).
+Pass as `-c key=value` at synth/deploy time.
 
 ---
 
 ## Populating the Secret
 
-After `terraform apply` with `create_secret = true`:
+After deploying with `createSecret=true`:
 
 ```bash
 aws secretsmanager put-secret-value \
-  --secret-id fire-hack/prompt-generator \
+  --secret-id firexp/dev/prompt-generator \
   --secret-string '{"SOME_API_KEY":"replace_me"}'
 ```
 
-Never store secret values in `.tf` files or `terraform.tfvars`.
+Never store secret values in CDK code or `cdk.json`.
 
 ---
 
 ## Security Notes
 
-- **Function URL auth:** defaults to `NONE` for development. Set `lambda_url_auth_type = "AWS_IAM"` in production.
-- **State file:** contains resource ARNs but no secret values. Keep it out of source control (add `infra/terraform/terraform.tfstate*` to `.gitignore`).
-- **IAM least privilege:** the Lambda role can only invoke the two listed Bedrock models, read/write the one DynamoDB table, and (optionally) read one Secrets Manager secret.
+- **API auth:** the HTTP APIs default to open (no auth) for development. Restrict with a Lambda authorizer or API Gateway auth for production.
+- **IAM least privilege:** the prompt-generator role can only invoke the two listed Bedrock models, read/write the one DynamoDB prompt-cache table, and (optionally) read one Secrets Manager secret.
+- **S3 bucket:** private — accessible only via CloudFront OAC or presigned URLs from the content-api Lambda.
 
 ---
 
 ## Outputs
 
-After apply:
+After deploy:
 
 | Output | Description |
 |---|---|
-| `lambda_function_url` | HTTPS endpoint to invoke the prompt-generator |
-| `lambda_role_arn` | IAM role ARN (useful for granting additional access) |
-| `prompts_table_name` | DynamoDB table name |
-| `prompts_table_arn` | DynamoDB table ARN |
-| `bedrock_policy_arn` | Bedrock invoke policy ARN (attach to other roles if needed) |
-| `secret_arn` | Secrets Manager ARN (empty if `create_secret = false`) |
+| `ContentApiUrl` | HTTP API v2 endpoint (content-api) |
+| `ContentBucketName` | Private S3 bucket name |
+| `ContentCdnUrl` | CloudFront CDN URL for video playback |
+| `SeriesTableName` | DynamoDB series table |
+| `EpisodesTableName` | DynamoDB episodes table |
+| `SessionsTableName` | DynamoDB sessions table |
+| `PromptsTableName` | DynamoDB prompt-cache table |
+| `BedrockPolicyArn` | Bedrock managed policy ARN (attach to other roles if needed) |
+| `PromptApiUrl` | HTTP API v2 endpoint (prompt-generator) |
+| `PromptGeneratorFunctionName` | Lambda function name (prompt-generator) |
 
 ---
 
 ## Tear Down
 
 ```bash
-terraform destroy   # removes ALL resources created by this config
-```
-
-Secrets Manager has a recovery window (default 30 days). To delete immediately:
-
-```bash
-aws secretsmanager delete-secret \
-  --secret-id fire-hack/prompt-generator \
-  --force-delete-without-recovery
+npx cdk destroy --all -c environment=dev
 ```

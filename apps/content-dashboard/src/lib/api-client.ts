@@ -60,12 +60,23 @@ export const apiClient = {
   },
 };
 
+/** True for real S3/HTTP(S) targets. Stub presign URLs (dev without a bucket) are not. */
+function isHttpUrl(url: string): boolean {
+  return /^https?:\/\//i.test(url);
+}
+
 /** Upload directly to a presigned S3 PUT URL — no auth header, just Content-Type */
 export async function uploadToS3(
   presignedUrl: string,
   file: File,
   onProgress?: (pct: number) => void,
 ): Promise<void> {
+  // Dev fallback: content-api returns stub:// URLs when no bucket is configured.
+  // Simulate a completed upload so the CMS flow works offline.
+  if (!isHttpUrl(presignedUrl)) {
+    onProgress?.(100);
+    return;
+  }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', presignedUrl);
@@ -99,6 +110,11 @@ export async function uploadPartToS3(
   contentType:  string,
   onProgress?:  (loaded: number) => void,
 ): Promise<string> {
+  // Dev fallback for stub multipart URLs (no bucket) — return a placeholder ETag.
+  if (!isHttpUrl(presignedUrl)) {
+    onProgress?.(blob.size);
+    return `"stub-etag"`;
+  }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', presignedUrl);

@@ -14,6 +14,7 @@ export function fetchSeries(id: string): Promise<SeriesSummary> {
 export interface CreateSeriesPayload {
   title: string;
   description: string;
+  category?: string;
   thumbnailUrl?: string;
 }
 

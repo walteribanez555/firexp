@@ -56,13 +56,14 @@ seriesRouter.get('/:id', async (c) => {
 // POST /api/v1/series
 seriesRouter.post('/', async (c) => {
   try {
-    const body = await c.req.json<{ title?: string; description?: string; thumbnailUrl?: string }>();
+    const body = await c.req.json<{ title?: string; description?: string; category?: string; thumbnailUrl?: string }>();
     if (!body.title)       throw new BadRequestException('title is required');
     if (!body.description) throw new BadRequestException('description is required');
 
     const item = await getSeriesRepo().create({
       title:        body.title,
       description:  body.description,
+      category:     body.category ?? '',
       thumbnailUrl: body.thumbnailUrl ?? '',
     });
     return c.json({ data: item }, 201);
@@ -75,7 +76,7 @@ seriesRouter.post('/', async (c) => {
 seriesRouter.put('/:id', async (c) => {
   try {
     const id   = c.req.param('id');
-    const body = await c.req.json<{ title?: string; description?: string; thumbnailUrl?: string }>();
+    const body = await c.req.json<{ title?: string; description?: string; category?: string; thumbnailUrl?: string }>();
     const item = await getSeriesRepo().update(id, body);
     if (!item) throw new NotFoundException('Series not found');
     return c.json({ data: item });

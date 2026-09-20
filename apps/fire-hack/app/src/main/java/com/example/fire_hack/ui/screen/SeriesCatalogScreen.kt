@@ -26,6 +26,7 @@ import androidx.tv.material3.*
 import com.example.fire_hack.Config
 import com.example.fire_hack.data.model.EpisodeSummary
 import com.example.fire_hack.data.model.Series
+import com.example.fire_hack.ui.component.FirexpLogo
 import com.example.fire_hack.ui.component.NetworkImage
 import com.example.fire_hack.ui.theme.Firexp
 
@@ -60,37 +61,10 @@ fun SeriesCatalogScreen(
             .verticalScroll(rememberScrollState())
             .padding(bottom = 40.dp),
     ) {
-        // ── Top nav ──────────────────────────────────────────────────────────
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 56.dp, end = 56.dp, top = 32.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(32.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(
-                        Modifier
-                            .size(22.dp)
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Brush.linearGradient(listOf(Firexp.accent2, Firexp.accent)))
-                    )
-                    Text("Firexp", fontSize = 18.sp, fontWeight = FontWeight.ExtraBold, color = Firexp.text)
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(28.dp)) {
-                    Text("Continue Watching", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Firexp.text)
-                    Text("All Series", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Firexp.dim)
-                    Text("New", fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Firexp.dim)
-                }
-            }
-            Text(
-                "◀▲▼▶ navigate · OK select",
-                fontSize = 13.sp,
-                color = Firexp.faint,
-                fontFamily = FontFamily.Monospace,
-            )
-        }
+        // ── Header (brand only) ───────────────────────────────────────────────
+        FirexpLogo(
+            modifier = Modifier.padding(start = 56.dp, top = 32.dp),
+        )
 
         // ── Featured hero ────────────────────────────────────────────────────
         if (hero != null && heroEpisode != null) {

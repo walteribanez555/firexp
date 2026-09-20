@@ -76,7 +76,7 @@ Tech Implementation · Design · Potential Impact · Quality of Idea.
 | 0:45–1:30 | Decisión: tally moviéndose, alguien cambia su voto a 3 s, cierre → la TV corta de rama sin corte | "The TV never breaks immersion. The decision lives in your hand." |
 | 1:30–1:55 | Final + Library: "your room chose A · 62% of rooms chose B" + recap de Bedrock | "Every room gets its own cut. And its own reason to replay." |
 | 1:55–2:25 | CMS: React Flow, simulador de flags, warning de decisión sin consecuencia, upload a S3 | "Creators build the graph, not the versions." |
-| 2:25–2:50 | Arquitectura 10 s + tests de paridad TS/Kotlin | "Kotlin on Fire OS, DynamoDB, S3+CloudFront, Bedrock, all IaC." |
+| 2:25–2:50 | Arquitectura 10 s + tests de paridad TS/Kotlin | "Kotlin on Fire OS, DynamoDB, S3+CloudFront, Bedrock, all CDK." |
 | 2:50–3:00 | Repo, licencia, tracks | Cierre |
 
 ---

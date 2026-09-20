@@ -33,7 +33,7 @@ interface Props {
 export function SeriesDialog({ open, onOpenChange, editing, onSubmit, isPending }: Props) {
   const form = useForm<SeriesFormValues>({
     resolver: zodResolver(seriesSchema),
-    defaultValues: { title: '', description: '', thumbnailUrl: '' },
+    defaultValues: { title: '', description: '', category: '', thumbnailUrl: '' },
   });
 
   useEffect(() => {
@@ -41,10 +41,11 @@ export function SeriesDialog({ open, onOpenChange, editing, onSubmit, isPending 
       form.reset({
         title: editing.title,
         description: editing.description,
+        category: editing.category ?? '',
         thumbnailUrl: editing.thumbnailUrl ?? '',
       });
     } else {
-      form.reset({ title: '', description: '', thumbnailUrl: '' });
+      form.reset({ title: '', description: '', category: '', thumbnailUrl: '' });
     }
   }, [editing, form]);
 
@@ -77,6 +78,19 @@ export function SeriesDialog({ open, onOpenChange, editing, onSubmit, isPending 
                   <FormLabel>Description</FormLabel>
                   <FormControl>
                     <Textarea placeholder="What is this series about?" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="category"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Category (optional)</FormLabel>
+                  <FormControl>
+                    <Input placeholder="Horror · Sci-Fi · Thriller…" {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>

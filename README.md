@@ -144,14 +144,14 @@ the scenes").
 
 | Service | Type | Destination |
 |---|---|---|
-| content-api, prompt-generator | Stateless (HTTP) | **Lambda** (CDK `NodejsFunction` / Terraform) |
+| content-api, prompt-generator | Stateless (HTTP) | **Lambda** (CDK `NodejsFunction`) |
 | **relay** | **WebSocket / real-time** | **local now → Fargate (ECS) later** (Lambda doesn't support persistent WS) |
 | data | — | **DynamoDB** |
 | video | — | **Private S3 + CloudFront (OAC)** |
 | phone / dashboard | web | Static (served by relay / static hosting) |
 
-Infrastructure as code: `infra/cdk` (content-api + DynamoDB + S3 + CloudFront) and
-`infra/terraform` (Bedrock/prompt-generator). **Nothing is applied automatically.**
+Infrastructure as code: **AWS CDK only** (`infra/cdk`) — two stacks: `FirexpContentStack`
+(content-api + DynamoDB + S3 + CloudFront) and `FirexpAiStack` (Bedrock IAM + prompt-generator + prompt-cache DynamoDB). **Nothing is applied automatically.**
 
 ---
 
@@ -168,8 +168,7 @@ apps/
 packages/
   types/             @fire-stick/types (shared contracts)
   story-graph/       @fire-stick/story-graph (graph logic)
-infra/cdk/           CDK: DynamoDB, S3, CloudFront, Lambda, HTTP API
-infra/terraform/     Terraform: IAM, Bedrock, prompt-generator
+infra/cdk/           CDK: DynamoDB, S3, CloudFront, Lambda, HTTP API, Bedrock IAM
 scripts/dev.sh       Single-command local dev launcher
 docker-compose.yml   DynamoDB Local (dev)
 ```

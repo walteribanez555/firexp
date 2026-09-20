@@ -35,8 +35,7 @@ la TV reproduce video real y ramifica por votos → distintos finales → `story
 | **prompt-generator** — Bedrock + caché DynamoDB (Lambda) | ✅ |
 | **packages/types** — contratos + schemas zod | ✅ |
 | **packages/story-graph** — motor puro + AST + validación (72 tests) | ✅ |
-| **infra/cdk** — DynamoDB (series/episodes/sessions) + S3 + CloudFront(OAC) + Lambda + HTTP API | ✅ (no desplegado) |
-| **infra/terraform** — IAM Bedrock + prompt-generator | ✅ (no desplegado) |
+| **infra/cdk** — DynamoDB (series/episodes/sessions/prompts) + S3 + CloudFront(OAC) + Bedrock IAM + Lambda + HTTP API (dos stacks) | ✅ (no desplegado) |
 
 ---
 
@@ -83,8 +82,8 @@ la TV reproduce video real y ramifica por votos → distintos finales → `story
 
 ## 6. Deuda técnica / notas menores
 
-- **No desplegado en AWS**: todo corre local (DynamoDB Local, relay, content‑api). El deploy (CDK/Terraform) está listo pero requiere tu OK y habilitar acceso a modelos Bedrock en consola.
-- **relay = local** (WebSocket); el paso a **Fargate** está planificado, no hecho.
+- **No desplegado en AWS**: todo corre local (DynamoDB Local, relay, content‑api). El deploy (CDK — dos stacks) está listo pero requiere tu OK y habilitar acceso a modelos Bedrock en consola.
+- **relay = local** (WebSocket) en dev. Ya existe `FirexpRelayStack` (CDK, no desplegado): **dev = 1 task Fargate con IP pública, sin ALB ni NAT** (~$9/mes, se localiza con `infra/scripts/relay-ip.sh`); **prod = ALB + NAT + task privada** (~$57/mes). La decisión dev↔prod está documentada en `infra/cdk/README.md`.
 - **IP LAN por DHCP**: `Config.RELAY_HOST/PHONE_HOST` se editan a mano si cambia la IP (recomendado reservar IP en el router).
 - phone/CSS usa un token `--dim` no definido en su `:root` (cae a color heredado) — cosmético.
 - Los clips 1080p@60 exceden el decoder por software del emulador (ahora con fallback **no crashea**).

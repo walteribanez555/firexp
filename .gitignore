@@ -39,6 +39,9 @@ cdk.out/
 .gradle/
 apps/relay/rooms/
 
+# TypeScript incremental build info (build artifact)
+*.tsbuildinfo
+
 # Third-party test media (reproducible sample clips — not committed)
 apps/relay/public/videos/
 

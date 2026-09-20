@@ -135,14 +135,14 @@ decisión** — solo video continuo; toda la decisión vive en el teléfono ("to
 
 | Servicio | Tipo | Destino |
 |---|---|---|
-| content-api, prompt-generator | stateless (HTTP) | **Lambda** (CDK `NodejsFunction` / Terraform) |
+| content-api, prompt-generator | stateless (HTTP) | **Lambda** (CDK `NodejsFunction`) |
 | **relay** | **WebSocket / tiempo real** | **local ahora → Fargate (ECS) después** (Lambda no sirve WS persistente) |
 | datos | — | **DynamoDB** |
 | video | — | **S3 privado + CloudFront (OAC)** |
 | phone / dashboard | web | estático (servido por el relay / hosting estático) |
 
-Infra como código: `infra/cdk` (content-api + DynamoDB + S3 + CloudFront) y `infra/terraform`
-(Bedrock/prompt-generator). **Nada se aplica automáticamente.**
+Infra como código: **solo AWS CDK** (`infra/cdk`) — dos stacks: `FirexpContentStack`
+(content-api + DynamoDB + S3 + CloudFront) y `FirexpAiStack` (IAM Bedrock + prompt-generator + DynamoDB caché). **Nada se aplica automáticamente.**
 
 ---
 
@@ -157,8 +157,7 @@ apps/
   content-dashboard/ CMS React (series, editor de flujo, uploads)
   prompt-generator/ Servicio de prompts IA (Bedrock + caché DynamoDB)
 packages/types/     @fire-stick/types (contratos compartidos)
-infra/cdk/          CDK: DynamoDB, S3, CloudFront, Lambda, HTTP API
-infra/terraform/    Terraform: IAM Bedrock, prompt-generator
+infra/cdk/          CDK: DynamoDB, S3, CloudFront, Lambda, HTTP API, IAM Bedrock
 docker-compose.yml  MySQL + DynamoDB Local (dev)
 ```
 

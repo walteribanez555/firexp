@@ -33,6 +33,9 @@ app.get('/', (c) => {
   return c.json({ service: 'relay', status: 'ok' });
 });
 
+// Root-level health check for the ALB / ECS target group (see FirexpRelayStack).
+app.get('/health', (c) => c.json({ status: 'ok' }));
+
 const v1 = new Hono<AppEnv>();
 
 v1.get('/health', (c) => {

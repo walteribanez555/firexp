@@ -1,21 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   addEdge,
   useNodesState,
   useEdgesState,
   BackgroundVariant,
   type Connection,
+  type ReactFlowInstance,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import { toast } from 'sonner';
 import {
   Save,
-  ArrowLeft,
   Plus,
   GitBranch,
   ChevronDown,
@@ -44,6 +42,7 @@ import { ChapterNode } from './components/nodes/ChapterNode';
 import { DecisionNode } from './components/nodes/DecisionNode';
 import { NodeEditPanel } from './components/NodeEditPanel';
 import { SimulatePanel } from './components/SimulatePanel';
+import { NodeActionsProvider } from './node-actions';
 import type { EpisodeDetail } from '@fire-stick/types';
 
 // NodeTypes accepts ComponentType<NodeProps & {data: any; type: any}>
@@ -111,9 +110,8 @@ function annotateNodes(
   return { annotated, inconsequentialCount: inconsequentialTuples.length };
 }
 
-export function FlowRoute() {
-  const { episodeId } = useParams<{ episodeId: string }>();
-  const navigate = useNavigate();
+/** Embeddable flow editor for a single episode (rendered inside the Series workspace). */
+export function FlowEditor({ episodeId }: { episodeId: string }) {
   const { data: episode, isLoading } = useEpisode(episodeId ?? '');
   const updateEpisode = useUpdateEpisode();
 
@@ -123,6 +121,7 @@ export function FlowRoute() {
   const [highlightedChapters, setHighlightedChapters] = useState<string[]>([]);
   const [simulateOpen, setSimulateOpen] = useState(false);
   const [inconsequentialCount, setInconsequentialCount] = useState(0);
+  const rfRef = useRef<ReactFlowInstance<FlowNode, FlowEdge> | null>(null);
 
   // Initialise flow when episode loads and run A4 analysis
   useEffect(() => {
@@ -132,7 +131,73 @@ export function FlowRoute() {
     setNodes(annotated as FlowNode[]);
     setEdges(e as FlowEdge[]);
     setInconsequentialCount(count);
+    // Fit the freshly-loaded graph once the DOM has the new nodes (embedded
+    // canvas mounts with the container already sized, so plain `fitView` misses).
+    requestAnimationFrame(() => rfRef.current?.fitView({ padding: 0.2, duration: 200 }));
   }, [episode, setNodes, setEdges]);
+
+  // ── Node actions (duplicate / delete) ────────────────────────────────────────
+  const onDeleteNode = useCallback(
+    (id: string) => {
+      setNodes((nds) => nds.filter((n) => n.id !== id) as FlowNode[]);
+      setEdges((eds) => eds.filter((e) => e.source !== id && e.target !== id) as FlowEdge[]);
+      setSelectedNode((sel) => (sel?.id === id ? null : sel));
+    },
+    [setNodes, setEdges],
+  );
+
+  const onDuplicateNode = useCallback(
+    (id: string) => {
+      setNodes((nds) => {
+        const orig = nds.find((n) => n.id === id);
+        if (!orig) return nds;
+        const t = (orig.data as { type: string }).type;
+        newNodeCounter += 1;
+
+        let newId: string;
+        let data: FlowNode['data'];
+        if (t === 'chapter') {
+          const cd = orig.data as ChapterNodeData;
+          newId = `node-chapter-new-${newNodeCounter}`;
+          data = {
+            ...cd,
+            chapter: {
+              ...cd.chapter,
+              id: `ch-new-${newNodeCounter}`,
+              title: `${cd.chapter.title} copy`,
+              decisions: [],
+              variants: cd.chapter.variants.map((v) => ({ ...v })),
+            },
+            shadowedVariantIndices: [],
+          };
+        } else if (t === 'decision') {
+          const dd = orig.data as DecisionNodeData;
+          newId = `node-decision-new-${newNodeCounter}`;
+          data = {
+            ...dd,
+            decision: {
+              ...dd.decision,
+              id: `dec-new-${newNodeCounter}`,
+              options: dd.decision.options.map((o) => ({ ...o })),
+            },
+            inconsequential: false,
+          };
+        } else {
+          return nds; // start node is not duplicable
+        }
+
+        const clone: FlowNode = {
+          ...orig,
+          id: newId,
+          position: { x: orig.position.x + 48, y: orig.position.y + 48 },
+          selected: false,
+          data,
+        };
+        return [...nds, clone] as FlowNode[];
+      });
+    },
+    [setNodes],
+  );
 
   const onConnect = useCallback(
     (connection: Connection) =>
@@ -252,7 +317,7 @@ export function FlowRoute() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen text-muted-foreground">
+      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
         Loading episode…
       </div>
     );
@@ -260,11 +325,8 @@ export function FlowRoute() {
 
   if (!episode) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <p className="text-muted-foreground">Episode not found.</p>
-        <Button variant="outline" onClick={() => navigate('/series')}>
-          <ArrowLeft className="h-4 w-4 mr-2" /> Back to Series
-        </Button>
+      <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+        Episode not found.
       </div>
     );
   }
@@ -280,14 +342,11 @@ export function FlowRoute() {
   const showWarningBanner = inconsequentialCount > 0 || totalShadowedVariants > 0;
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-full">
       {/* Canvas */}
       <div className="flex-1 relative">
         {/* Toolbar */}
         <div className="absolute top-3 left-3 z-10 flex gap-2">
-          <Button size="sm" variant="outline" onClick={() => navigate('/series')}>
-            <ArrowLeft className="h-4 w-4 mr-1" /> Back
-          </Button>
           <Button size="sm" variant="outline" onClick={addChapter}>
             <Plus className="h-4 w-4 mr-1" /> Chapter
           </Button>
@@ -302,13 +361,6 @@ export function FlowRoute() {
             <Save className="h-4 w-4 mr-1" />
             {updateEpisode.isPending ? 'Saving…' : 'Save'}
           </Button>
-        </div>
-
-        {/* Episode title */}
-        <div className="absolute top-3 right-3 z-10">
-          <Card className="px-3 py-1.5 text-sm font-medium border-primary/40">
-            {episode.title} — Ep {episode.number}
-          </Card>
         </div>
 
         {/* A4 summary banner */}
@@ -354,41 +406,39 @@ export function FlowRoute() {
           </Card>
         </div>
 
-        <ReactFlow
-          nodes={nodes.map((n) => {
-            const t = (n.data as { type: string }).type;
-            if (t === 'chapter') {
-              const chId = (n.data as { chapter: { id: string } }).chapter.id;
-              return {
-                ...n,
-                data: {
-                  ...n.data,
-                  isHighlighted: highlightedChapters.includes(chId),
-                },
-              };
-            }
-            return n;
-          })}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeClick={onNodeClick}
-          fitView
-          className="bg-background"
-        >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(215 20.2% 25%)" />
-          <Controls />
-          <MiniMap
-            nodeColor={(n) => {
-              const t = (n.data as { type: string })?.type;
-              if (t === 'start') return 'hsl(217.2 91.2% 59.8%)';
-              if (t === 'chapter') return 'hsl(210 40% 40%)';
-              return 'hsl(45 100% 40%)';
+        <NodeActionsProvider value={{ onDuplicate: onDuplicateNode, onDelete: onDeleteNode }}>
+          <ReactFlow
+            onInit={(instance) => {
+              rfRef.current = instance;
+              instance.fitView({ padding: 0.2 });
             }}
-          />
-        </ReactFlow>
+            nodes={nodes.map((n) => {
+              const t = (n.data as { type: string }).type;
+              if (t === 'chapter') {
+                const chId = (n.data as { chapter: { id: string } }).chapter.id;
+                return {
+                  ...n,
+                  data: {
+                    ...n.data,
+                    isHighlighted: highlightedChapters.includes(chId),
+                  },
+                };
+              }
+              return n;
+            })}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            fitView
+            className="bg-background"
+          >
+            <Background variant={BackgroundVariant.Dots} gap={20} size={1} color="hsl(215 20.2% 25%)" />
+            <Controls />
+          </ReactFlow>
+        </NodeActionsProvider>
       </div>
 
       {/* Right panel */}
@@ -396,6 +446,7 @@ export function FlowRoute() {
         <div className="w-72 border-l bg-card flex flex-col overflow-hidden">
           <NodeEditPanel
             node={selectedNode}
+            episodeId={episode.id}
             onChange={handleNodeChange}
             onClose={() => setSelectedNode(null)}
           />

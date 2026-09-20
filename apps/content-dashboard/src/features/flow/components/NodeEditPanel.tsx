@@ -6,6 +6,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { VariantUploader } from '../../uploads/components/VariantUploader';
+import { useVariantUpload } from '../../uploads/hooks/use-upload';
 import type { FlowNode, StartNodeData, ChapterNodeData, DecisionNodeData } from '../lib/episode-to-flow';
 import type { Action, StoryVariant, DecisionOption, FlagSet } from '@fire-stick/types';
 
@@ -13,13 +15,19 @@ const GESTURES: Action[] = [
   'hands_up', 'crouch', 'lean_forward', 'cover_eyes', 'point_left', 'point_right', 'stand_up',
 ];
 
+/** Stable id for a variant used both as the S3 object tag and the progress key. */
+function variantTag(v: StoryVariant, i: number): string {
+  return v.tag?.trim() || `v${i}`;
+}
+
 interface Props {
   node: FlowNode;
+  episodeId: string;
   onChange: (updated: FlowNode) => void;
   onClose: () => void;
 }
 
-export function NodeEditPanel({ node, onChange, onClose }: Props) {
+export function NodeEditPanel({ node, episodeId, onChange, onClose }: Props) {
   const nodeType = (node.data as { type: string }).type;
 
   function patchData(patch: Partial<Record<string, unknown>>) {
@@ -30,7 +38,7 @@ export function NodeEditPanel({ node, onChange, onClose }: Props) {
     return <StartEditor node={node} patchData={patchData} onClose={onClose} />;
   }
   if (nodeType === 'chapter') {
-    return <ChapterEditor node={node} patchData={patchData} onClose={onClose} />;
+    return <ChapterEditor node={node} episodeId={episodeId} patchData={patchData} onClose={onClose} />;
   }
   if (nodeType === 'decision') {
     return <DecisionEditor node={node} patchData={patchData} onClose={onClose} />;
@@ -87,9 +95,10 @@ function StartEditor({ node, patchData, onClose }: { node: FlowNode; patchData: 
 
 // ─── Chapter editor ───────────────────────────────────────────────────────────
 
-function ChapterEditor({ node, patchData, onClose }: { node: FlowNode; patchData: (p: Partial<Record<string, unknown>>) => void; onClose: () => void }) {
+function ChapterEditor({ node, episodeId, patchData, onClose }: { node: FlowNode; episodeId: string; patchData: (p: Partial<Record<string, unknown>>) => void; onClose: () => void }) {
   const d = node.data as ChapterNodeData;
   const chapter = d.chapter;
+  const { progresses, uploadVariant } = useVariantUpload();
 
   function updateVariant(i: number, patch: Partial<StoryVariant>) {
     const variants = chapter.variants.map((v, idx) => idx === i ? { ...v, ...patch } : v);
@@ -109,36 +118,60 @@ function ChapterEditor({ node, patchData, onClose }: { node: FlowNode; patchData
     patchData({ chapter: { ...chapter, variants } });
   }
 
+  // Upload the file for variant i, then link the resulting URL onto the step.
+  async function handleUpload(i: number, file: File) {
+    try {
+      const url = await uploadVariant({
+        episodeId,
+        chapterId: chapter.id,
+        variantTag: variantTag(chapter.variants[i], i),
+        file,
+      });
+      updateVariant(i, { videoUrl: url });
+    } catch {
+      /* toast already shown by the hook */
+    }
+  }
+
   return (
-    <PanelShell title={`Chapter: ${chapter.title}`} onClose={onClose}>
-      <Field label="Chapter Title">
+    <PanelShell title={chapter.title || 'Chapter'} onClose={onClose}>
+      <Field label="Title">
         <Input value={chapter.title} onChange={(e) => patchData({ chapter: { ...chapter, title: e.target.value } })} />
       </Field>
       <div>
         <div className="flex items-center justify-between mb-2">
-          <Label>Variants</Label>
+          <Label>Branches</Label>
           <Button size="sm" variant="outline" onClick={addVariant}><Plus className="h-3 w-3 mr-1" /> Add</Button>
         </div>
         <div className="space-y-3">
           {chapter.variants.map((v, i) => (
-            <div key={i} className="rounded border p-2 space-y-2 relative">
+            <div key={i} className="rounded-md border p-2.5 space-y-2.5 relative">
               <Button
                 size="icon"
                 variant="ghost"
-                className="absolute top-1 right-1 h-6 w-6 text-destructive"
+                className="absolute top-1.5 right-1.5 h-6 w-6 text-muted-foreground hover:text-destructive"
                 onClick={() => removeVariant(i)}
               >
                 <Trash2 className="h-3 w-3" />
               </Button>
-              <Field label="When condition">
+
+              {/* Video for this step — uploaded and linked in place */}
+              <VariantUploader
+                chapterId={chapter.id}
+                variant={v}
+                progress={progresses.get(`${chapter.id}:${variantTag(v, i)}`)}
+                onUpload={(_cid, _tag, file) => handleUpload(i, file)}
+              />
+
+              <Field label="When">
                 <Input
                   className="font-mono text-xs"
                   value={v.when}
                   onChange={(e) => updateVariant(i, { when: e.target.value })}
-                  placeholder='e.g. confident >= 1 || "default"'
+                  placeholder='confident >= 1  ·  default'
                 />
               </Field>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <Field label="Tag">
                   <Input value={v.tag ?? ''} onChange={(e) => updateVariant(i, { tag: e.target.value })} />
                 </Field>
@@ -149,16 +182,13 @@ function ChapterEditor({ node, patchData, onClose }: { node: FlowNode; patchData
                   <Input type="number" value={v.out} onChange={(e) => updateVariant(i, { out: Number(e.target.value) })} />
                 </Field>
               </div>
-              <Field label="Video URL">
-                <Input
-                  className="text-xs"
-                  value={v.videoUrl ?? ''}
-                  onChange={(e) => updateVariant(i, { videoUrl: e.target.value })}
-                  placeholder="https://cdn…"
-                />
-              </Field>
             </div>
           ))}
+          {chapter.variants.length === 0 && (
+            <p className="rounded-md border border-dashed px-3 py-4 text-center text-xs text-muted-foreground">
+              No branches yet. Add one to attach a video.
+            </p>
+          )}
         </div>
       </div>
     </PanelShell>

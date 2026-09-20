@@ -1,6 +1,14 @@
-import { useCallback } from 'react';
-import { Upload, CheckCircle, AlertCircle, Loader2 } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { useCallback, useState } from 'react';
+import {
+  UploadCloud,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  ExternalLink,
+  RefreshCw,
+} from 'lucide-react';
+import { Progress } from '@/components/ui/progress';
+import { cn, formatBytes, basename } from '@/lib/utils';
 import type { StoryVariant } from '@fire-stick/types';
 import type { UploadProgress, UploadStatus } from '../hooks/use-upload';
 
@@ -11,107 +19,130 @@ interface Props {
   onUpload: (chapterId: string, variantTag: string, file: File) => void;
 }
 
+const ACTIVE: UploadStatus[] = ['presigning', 'uploading', 'completing', 'patching'];
+
+const STATUS_LABEL: Record<UploadStatus, string> = {
+  idle: '',
+  presigning: 'Preparing…',
+  uploading: 'Uploading',
+  completing: 'Finalizing…',
+  patching: 'Saving…',
+  done: 'Uploaded',
+  error: 'Failed',
+};
+
+/** Compact, width-safe video slot for a single branch. Lives in the flow node panel. */
 export function VariantUploader({ chapterId, variant, progress, onUpload }: Props) {
-  const tag    = variant.tag ?? 'default';
+  const tag = variant.tag ?? 'default';
   const status = (progress?.status ?? 'idle') as UploadStatus;
+  const isActive = ACTIVE.includes(status);
+  const hasVideo = !!variant.videoUrl;
+  const [dragging, setDragging] = useState(false);
 
-  // Statuses that show the spinner / active-upload border style.
-  const isActive = (s: UploadStatus) =>
-    s === 'presigning' || s === 'uploading' || s === 'completing' || s === 'patching';
+  const submit = useCallback(
+    (file?: File | null) => {
+      if (file) onUpload(chapterId, tag, file);
+    },
+    [chapterId, tag, onUpload],
+  );
 
-  const handleDrop = useCallback(
-    (e: React.DragEvent<HTMLDivElement>) => {
+  const onDrop = useCallback(
+    (e: React.DragEvent) => {
       e.preventDefault();
-      const file = e.dataTransfer.files[0];
-      if (file) onUpload(chapterId, tag, file);
+      setDragging(false);
+      if (!isActive) submit(e.dataTransfer.files?.[0]);
     },
-    [chapterId, tag, onUpload],
+    [isActive, submit],
   );
 
-  const handleFileChange = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) onUpload(chapterId, tag, file);
+  const dragProps = {
+    onDragOver: (e: React.DragEvent) => {
+      e.preventDefault();
+      if (!isActive) setDragging(true);
     },
-    [chapterId, tag, onUpload],
-  );
+    onDragLeave: () => setDragging(false),
+    onDrop,
+  };
 
-  return (
-    <div
-      onDragOver={(e) => e.preventDefault()}
-      onDrop={handleDrop}
-      className={[
-        'relative rounded-md border-2 border-dashed p-3 transition-colors',
-        status === 'done'  ? 'border-primary/50 bg-primary/10' :
-        status === 'error' ? 'border-destructive/50 bg-destructive/10' :
-        isActive(status)   ? 'border-primary/50 bg-primary/5' :
-        'border-border hover:border-primary/50 hover:bg-accent/30',
-      ].join(' ')}
-    >
-      <div className="flex items-center gap-3">
-        {/* Status icon */}
-        <div className="shrink-0">
-          {status === 'done' && <CheckCircle className="h-5 w-5 text-primary" />}
-          {status === 'error' && <AlertCircle className="h-5 w-5 text-destructive" />}
-          {isActive(status) && (
-            <Loader2 className="h-5 w-5 text-primary animate-spin" />
-          )}
-          {status === 'idle' && <Upload className="h-5 w-5 text-muted-foreground" />}
+  // ── Uploading / working ──────────────────────────────────────
+  if (isActive) {
+    const showBar = status === 'uploading' || status === 'completing';
+    const shown = status === 'completing' ? 99 : progress?.progress ?? 0;
+    return (
+      <div className="rounded-md border border-primary/40 bg-primary/5 p-2">
+        <div className="mb-1 flex items-center gap-1.5 text-xs text-foreground">
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+          <span className="truncate">
+            {STATUS_LABEL[status]}
+            {progress?.fileName ? <span className="text-muted-foreground"> · {progress.fileName}</span> : null}
+          </span>
+          {showBar && <span className="ml-auto shrink-0 tabular-nums text-muted-foreground">{shown}%</span>}
         </div>
-
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium truncate">
-            {variant.when === 'default' ? 'default' : variant.when}
-            {variant.tag && <span className="ml-1 text-xs text-muted-foreground">({variant.tag})</span>}
-          </p>
-          {variant.videoUrl && !isActive(status) && status !== 'error' && (
-            <p className="text-xs text-primary truncate">{variant.videoUrl}</p>
-          )}
-          {status === 'uploading' && (
-            <div className="mt-1">
-              <div className="h-1 bg-secondary rounded-full overflow-hidden">
-                <div
-                  className="h-full bg-primary transition-all duration-200"
-                  style={{ width: `${progress?.progress ?? 0}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {progress?.progress ?? 0}% — uploading
-              </p>
-            </div>
-          )}
-          {status === 'completing' && (
-            <div className="mt-1">
-              <div className="h-1 bg-secondary rounded-full overflow-hidden">
-                <div className="h-full bg-primary transition-all duration-200" style={{ width: '99%' }} />
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">Completing upload…</p>
-            </div>
-          )}
-          {status === 'presigning' && <p className="text-xs text-muted-foreground">Getting upload URL…</p>}
-          {status === 'patching'   && <p className="text-xs text-muted-foreground">Saving…</p>}
-          {status === 'error'      && <p className="text-xs text-destructive">{progress?.error}</p>}
-        </div>
-
-        {/* Upload button */}
-        {(status === 'idle' || status === 'done' || status === 'error') ? (
-          <label className="shrink-0">
-            <input
-              type="file"
-              accept="video/mp4,video/*"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-            <Button size="sm" variant="outline" asChild>
-              <span className="cursor-pointer">
-                <Upload className="h-3.5 w-3.5 mr-1" />
-                {status === 'done' ? 'Replace' : 'Upload'}
-              </span>
-            </Button>
-          </label>
-        ) : null}
+        {showBar && <Progress value={shown} className="h-1" />}
       </div>
-    </div>
+    );
+  }
+
+  // ── Has a video (done or persisted) ──────────────────────────
+  if (hasVideo) {
+    return (
+      <div {...dragProps} className={cn('rounded-md border p-1.5', dragging && 'border-primary bg-primary/10')}>
+        <div className="flex items-center gap-1.5">
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 truncate text-xs" title={variant.videoUrl}>
+            {basename(variant.videoUrl!)}
+            {progress?.fileSize ? (
+              <span className="text-muted-foreground"> · {formatBytes(progress.fileSize)}</span>
+            ) : null}
+          </span>
+          <a
+            href={variant.videoUrl}
+            target="_blank"
+            rel="noreferrer"
+            title="Open video"
+            className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+          </a>
+          <label
+            title="Replace video"
+            className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
+          >
+            <input type="file" accept="video/mp4,video/*" className="hidden" onChange={(e) => submit(e.target.files?.[0])} />
+            <RefreshCw className="h-3.5 w-3.5" />
+          </label>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Empty (idle / error) — full-width dropzone ───────────────
+  return (
+    <label
+      {...dragProps}
+      className={cn(
+        'flex cursor-pointer flex-col items-center justify-center gap-1 rounded-md border border-dashed px-2 py-3 text-center transition-colors',
+        dragging
+          ? 'border-primary bg-primary/10'
+          : status === 'error'
+            ? 'border-destructive/50 bg-destructive/5'
+            : 'border-border hover:border-primary/50 hover:bg-accent/40',
+      )}
+    >
+      <input type="file" accept="video/mp4,video/*" className="hidden" onChange={(e) => submit(e.target.files?.[0])} />
+      {status === 'error' ? (
+        <>
+          <AlertCircle className="h-4 w-4 text-destructive" />
+          <span className="text-xs text-destructive">{progress?.error ?? 'Upload failed'}</span>
+          <span className="text-[11px] text-muted-foreground">Click to retry</span>
+        </>
+      ) : (
+        <>
+          <UploadCloud className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs font-medium">Upload video</span>
+          <span className="text-[11px] text-muted-foreground">Drag &amp; drop or click · MP4</span>
+        </>
+      )}
+    </label>
   );
 }

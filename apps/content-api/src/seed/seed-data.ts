@@ -19,6 +19,7 @@ export const SEED_SERIES: SeriesSummary[] = [
     id:           'series1',
     title:        'Mystery House',
     description:  'A collection of interactive horror experiences where your choices change everything.',
+    category:     'Horror',
     thumbnailUrl: '/images/series1.jpg',
     episodes: [
       { id: 'episode1', number: 1, title: 'The House at the End of the Road', thumbnailUrl: '/images/episode1.jpg' },
@@ -29,18 +30,42 @@ export const SEED_SERIES: SeriesSummary[] = [
     id:           'series2',
     title:        'Deep Signal',
     description:  'A sci-fi thriller about first contact aboard a failing deep-space relay.',
+    category:     'Sci-Fi',
     thumbnailUrl: '/images/series2.jpg',
     episodes: [
       { id: 'deep1', number: 1, title: 'Transmission', thumbnailUrl: '/images/deep1.jpg' },
+      { id: 'deep2', number: 2, title: 'The Response',  thumbnailUrl: '/images/deep2.jpg' },
     ],
   },
   {
     id:           'series3',
     title:        'Night Shift',
     description:  'The hospital empties at 3 a.m. — but you are not alone on the ward.',
+    category:     'Horror',
     thumbnailUrl: '/images/series3.jpg',
     episodes: [
       { id: 'night1', number: 1, title: 'Rounds', thumbnailUrl: '/images/night1.jpg' },
+    ],
+  },
+  {
+    id:           'series4',
+    title:        'Cold Cases',
+    description:  'A detective anthology where every lead you follow rewrites the confession.',
+    category:     'Thriller',
+    thumbnailUrl: '/images/series4.jpg',
+    episodes: [
+      { id: 'cold1', number: 1, title: 'The Last Witness', thumbnailUrl: '/images/cold1.jpg' },
+      { id: 'cold2', number: 2, title: 'Chain of Custody', thumbnailUrl: '/images/cold2.jpg' },
+    ],
+  },
+  {
+    id:           'series5',
+    title:        'Wander',
+    description:  'A survival trek across a shifting wilderness — the group only moves as one.',
+    category:     'Adventure',
+    thumbnailUrl: '/images/series5.jpg',
+    episodes: [
+      { id: 'wander1', number: 1, title: 'The Fork in the Trail', thumbnailUrl: '/images/wander1.jpg' },
     ],
   },
 ];
@@ -323,6 +348,214 @@ export const SEED_EPISODES: EpisodeDetail[] = [
         variants: [
           { in: 0.0, out: 12.0, when: 'nerve >= 1', tag: 'ending_survive', videoUrl: '/videos/ch3_ending_heroic.mp4' },
           { in: 0.0, out: 12.0, when: 'default',    tag: 'ending_lost',    videoUrl: '/videos/ch3_ending_dark.mp4' },
+        ],
+      },
+    ],
+  },
+
+  // ── Deep Signal · Episode 2 ───────────────────────────────────────────────
+  {
+    id:       'deep2',
+    seriesId: 'series2',
+    number:   2,
+    video:    '',
+    title:    'The Response',
+    questionnaire: [
+      {
+        id:   'q1',
+        text: 'The signal answers back. You…',
+        options: [
+          { id: 'decode', label: 'Decode it',   flags: { signal: '+1' } },
+          { id: 'hold',   label: 'Hold silent', flags: { calm: '+1' } },
+        ],
+      },
+    ],
+    flags: { signal: 0, calm: 0 },
+    chapters: [
+      {
+        id:    'ch1',
+        title: 'Contact',
+        decisions: [
+          {
+            id:     'ch1_pre_1',
+            phase:  'pre',
+            window: 6000,
+            prompt: 'The pattern forms words. Reply?',
+            options: [
+              { gesture: 'hands_up', label: 'Reply',  set: { signal: '+1' } },
+              { gesture: 'crouch',   label: 'Listen', set: { calm: '+1' } },
+            ],
+            default: { set: {} },
+          },
+        ],
+        variants: [
+          { in: 0.0, out: 12.0, when: 'signal >= 1', tag: 'answer',  videoUrl: '/videos/ch2_bold.mp4' },
+          { in: 0.0, out: 12.0, when: 'default',     tag: 'wait',    videoUrl: '/videos/ch2_neutral.mp4' },
+        ],
+      },
+      {
+        id:    'ch2',
+        title: 'The Choice',
+        decisions: [],
+        variants: [
+          { in: 0.0, out: 12.0, when: 'signal >= 2', tag: 'ending_bond',  videoUrl: '/videos/ch3_ending_heroic.mp4' },
+          { in: 0.0, out: 12.0, when: 'default',     tag: 'ending_alone', videoUrl: '/videos/ch3_ending_neutral.mp4' },
+        ],
+      },
+    ],
+  },
+
+  // ── Cold Cases · Episode 1 ────────────────────────────────────────────────
+  {
+    id:       'cold1',
+    seriesId: 'series4',
+    number:   1,
+    video:    '',
+    title:    'The Last Witness',
+    questionnaire: [
+      {
+        id:   'q1',
+        text: 'Your interrogation style?',
+        options: [
+          { id: 'press',  label: 'Press hard',   flags: { pressure: '+1' } },
+          { id: 'listen', label: 'Build rapport', flags: { trust: '+1' } },
+        ],
+      },
+    ],
+    flags: { pressure: 0, trust: 0 },
+    chapters: [
+      {
+        id:    'ch1',
+        title: 'The Statement',
+        decisions: [
+          {
+            id:     'ch1_pre_1',
+            phase:  'pre',
+            window: 6000,
+            prompt: 'The witness hesitates. Push?',
+            options: [
+              { gesture: 'hands_up', label: 'Push',  set: { pressure: '+1' } },
+              { gesture: 'crouch',   label: 'Wait',  set: { trust: '+1' } },
+            ],
+            default: { set: {} },
+          },
+        ],
+        variants: [
+          { in: 0.0, out: 12.0, when: 'pressure >= 1', tag: 'confession', videoUrl: '/videos/ch1_confrontation.mp4' },
+          { in: 0.0, out: 12.0, when: 'default',       tag: 'rapport',    videoUrl: '/videos/ch1_cautious.mp4' },
+        ],
+      },
+      {
+        id:    'ch2',
+        title: 'The Verdict',
+        decisions: [],
+        variants: [
+          { in: 0.0, out: 12.0, when: 'trust >= 1', tag: 'ending_truth', videoUrl: '/videos/ch3_ending_heroic.mp4' },
+          { in: 0.0, out: 12.0, when: 'default',    tag: 'ending_cold',  videoUrl: '/videos/ch3_ending_dark.mp4' },
+        ],
+      },
+    ],
+  },
+
+  // ── Cold Cases · Episode 2 ────────────────────────────────────────────────
+  {
+    id:       'cold2',
+    seriesId: 'series4',
+    number:   2,
+    video:    '',
+    title:    'Chain of Custody',
+    questionnaire: [
+      {
+        id:   'q1',
+        text: 'The evidence is compromised. You…',
+        options: [
+          { id: 'report', label: 'Report it',  flags: { integrity: '+1' } },
+          { id: 'bury',   label: 'Bury it',    flags: { pressure: '+1' } },
+        ],
+      },
+    ],
+    flags: { integrity: 0, pressure: 0 },
+    chapters: [
+      {
+        id:    'ch1',
+        title: 'The Locker',
+        decisions: [
+          {
+            id:     'ch1_pre_1',
+            phase:  'pre',
+            window: 6000,
+            prompt: 'A file is missing. Flag it?',
+            options: [
+              { gesture: 'hands_up', label: 'Flag it', set: { integrity: '+1' } },
+              { gesture: 'crouch',   label: 'Say nothing', set: { pressure: '+1' } },
+            ],
+            default: { set: {} },
+          },
+        ],
+        variants: [
+          { in: 0.0, out: 12.0, when: 'integrity >= 1', tag: 'clean', videoUrl: '/videos/ch1_cautious.mp4' },
+          { in: 0.0, out: 12.0, when: 'default',        tag: 'murky', videoUrl: '/videos/ch1_confrontation.mp4' },
+        ],
+      },
+      {
+        id:    'ch2',
+        title: 'The Hearing',
+        decisions: [],
+        variants: [
+          { in: 0.0, out: 12.0, when: 'integrity >= 1', tag: 'ending_justice',  videoUrl: '/videos/ch3_ending_heroic.mp4' },
+          { in: 0.0, out: 12.0, when: 'default',        tag: 'ending_coverup',  videoUrl: '/videos/ch3_ending_dark.mp4' },
+        ],
+      },
+    ],
+  },
+
+  // ── Wander · Episode 1 ────────────────────────────────────────────────────
+  {
+    id:       'wander1',
+    seriesId: 'series5',
+    number:   1,
+    video:    '',
+    title:    'The Fork in the Trail',
+    questionnaire: [
+      {
+        id:   'q1',
+        text: 'The group is split on the route. You…',
+        options: [
+          { id: 'lead',    label: 'Take the lead', flags: { resolve: '+1' } },
+          { id: 'consense', label: 'Seek consensus', flags: { unity: '+1' } },
+        ],
+      },
+    ],
+    flags: { resolve: 0, unity: 0 },
+    chapters: [
+      {
+        id:    'ch1',
+        title: 'The Ridge',
+        decisions: [
+          {
+            id:     'ch1_pre_1',
+            phase:  'pre',
+            window: 6000,
+            prompt: 'A storm rolls in. Push on?',
+            options: [
+              { gesture: 'hands_up', label: 'Push on',  set: { resolve: '+1' } },
+              { gesture: 'crouch',   label: 'Make camp', set: { unity: '+1' } },
+            ],
+            default: { set: {} },
+          },
+        ],
+        variants: [
+          { in: 0.0, out: 12.0, when: 'resolve >= 1', tag: 'push', videoUrl: '/videos/ch1_confrontation.mp4' },
+          { in: 0.0, out: 12.0, when: 'default',      tag: 'camp', videoUrl: '/videos/ch1_cautious.mp4' },
+        ],
+      },
+      {
+        id:    'ch2',
+        title: 'The Descent',
+        decisions: [],
+        variants: [
+          { in: 0.0, out: 12.0, when: 'unity >= 1', tag: 'ending_together', videoUrl: '/videos/ch3_ending_heroic.mp4' },
+          { in: 0.0, out: 12.0, when: 'default',    tag: 'ending_scattered', videoUrl: '/videos/ch3_ending_neutral.mp4' },
         ],
       },
     ],

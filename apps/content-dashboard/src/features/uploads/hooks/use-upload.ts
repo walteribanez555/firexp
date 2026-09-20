@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
   presignUpload,
@@ -8,10 +7,7 @@ import {
   multipartAbort,
   type CompletedPart,
 } from '../api/uploads.api';
-import { updateEpisode } from '../../series/api/series.api';
 import { uploadToS3, uploadPartToS3 } from '@/lib/api-client';
-import { episodeKey } from '../../series/hooks/use-series';
-import type { EpisodeDetail } from '@fire-stick/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -28,7 +24,6 @@ export interface UploadVariantParams {
   chapterId:  string;
   variantTag: string;
   file:       File;
-  episode:    EpisodeDetail;
 }
 
 export type UploadStatus =
@@ -46,13 +41,23 @@ export interface UploadProgress {
   status:     UploadStatus;
   /** 0–100 reflecting total bytes across all parts */
   progress:   number;
+  /** Original file metadata, captured at mutation start (for in-session feedback). */
+  fileName?:  string;
+  fileSize?:  number;
+  /** true when file size crossed the multipart threshold. */
+  multipart?: boolean;
   error?:     string;
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useUploadVariant() {
-  const qc = useQueryClient();
+/**
+ * Uploads a branch video to S3 (single-PUT or multipart by size) and resolves
+ * with the public URL. It deliberately does NOT persist the episode — the caller
+ * (the flow editor) writes the returned URL onto the step, so the video is linked
+ * as part of the same unsaved graph edit.
+ */
+export function useVariantUpload() {
   const [progresses, setProgresses] = useState<Map<string, UploadProgress>>(new Map());
 
   function setProg(key: string, patch: Partial<UploadProgress>) {
@@ -67,28 +72,22 @@ export function useUploadVariant() {
   // ── Single-PUT (≤ 8 MiB) ────────────────────────────────────────────────────
 
   async function runSinglePut(
-    episodeId:   string,
-    chapterId:   string,
-    variantTag:  string,
-    file:        File,
+    p: UploadVariantParams,
     contentType: string,
-    progressKey: string,
+    key: string,
   ): Promise<string> {
-    setProg(progressKey, { chapterId, variantTag, status: 'presigning', progress: 0 });
+    setProg(key, { status: 'presigning', progress: 0 });
 
     const { uploadUrl, publicUrl } = await presignUpload({
-      episodeId,
-      chapterId,
-      variantTag,
+      episodeId: p.episodeId,
+      chapterId: p.chapterId,
+      variantTag: p.variantTag,
       contentType,
-      fileSizeBytes: file.size,
+      fileSizeBytes: p.file.size,
     });
 
-    setProg(progressKey, { status: 'uploading', progress: 0 });
-
-    await uploadToS3(uploadUrl, file, (pct) => {
-      setProg(progressKey, { progress: pct });
-    });
+    setProg(key, { status: 'uploading', progress: 0 });
+    await uploadToS3(uploadUrl, p.file, (pct) => setProg(key, { progress: pct }));
 
     return publicUrl;
   }
@@ -96,124 +95,89 @@ export function useUploadVariant() {
   // ── Multipart (> 8 MiB) ─────────────────────────────────────────────────────
 
   async function runMultipart(
-    episodeId:   string,
-    chapterId:   string,
-    variantTag:  string,
-    file:        File,
+    p: UploadVariantParams,
     contentType: string,
-    progressKey: string,
+    key: string,
   ): Promise<string> {
+    const { file } = p;
     const partCount = Math.ceil(file.size / PART_SIZE_BYTES);
 
-    setProg(progressKey, { chapterId, variantTag, status: 'presigning', progress: 0 });
+    setProg(key, { status: 'presigning', progress: 0 });
 
-    const { key, uploadId, publicUrl, partUrls } = await multipartCreate({
-      episodeId,
-      chapterId,
-      variantTag,
+    const { key: s3Key, uploadId, publicUrl, partUrls } = await multipartCreate({
+      episodeId: p.episodeId,
+      chapterId: p.chapterId,
+      variantTag: p.variantTag,
       contentType,
       fileSizeBytes: file.size,
       partCount,
     });
 
-    setProg(progressKey, { status: 'uploading', progress: 0 });
+    setProg(key, { status: 'uploading', progress: 0 });
 
-    // Per-part loaded bytes for aggregate progress reporting.
     const loadedPerPart = new Array<number>(partCount).fill(0);
     const totalBytes    = file.size;
 
     function onPartProgress(partIndex: number, loaded: number) {
       loadedPerPart[partIndex] = loaded;
       const totalLoaded = loadedPerPart.reduce((a, b) => a + b, 0);
-      // Cap at 99 — the final 1% is saved for the CompleteMultipartUpload round-trip.
       const pct = Math.min(99, Math.round((totalLoaded / totalBytes) * 100));
-      setProg(progressKey, { progress: pct });
+      setProg(key, { progress: pct });
     }
 
     const completedParts: CompletedPart[] = [];
 
     try {
-      // Sequential part uploads — avoids browser connection concurrency limits.
       for (let i = 0; i < partUrls.length; i++) {
         const { partNumber, url } = partUrls[i];
         const start = (partNumber - 1) * PART_SIZE_BYTES;
         const end   = Math.min(start + PART_SIZE_BYTES, file.size);
         const blob  = file.slice(start, end);
 
-        const eTag = await uploadPartToS3(url, blob, contentType, (loaded) => {
-          onPartProgress(i, loaded);
-        });
-
+        const eTag = await uploadPartToS3(url, blob, contentType, (loaded) => onPartProgress(i, loaded));
         completedParts.push({ partNumber, eTag });
       }
     } catch (partErr) {
-      // Best-effort abort to release partial S3 storage.
-      await multipartAbort({ key, uploadId }).catch(() => undefined);
+      await multipartAbort({ key: s3Key, uploadId }).catch(() => undefined);
       throw partErr;
     }
 
-    // "Completing" phase: waiting for S3 to assemble the parts.
-    setProg(progressKey, { status: 'completing', progress: 99 });
-
-    const { publicUrl: confirmedUrl } = await multipartComplete({
-      key,
-      uploadId,
-      parts: completedParts,
-    });
-
+    setProg(key, { status: 'completing', progress: 99 });
+    const { publicUrl: confirmedUrl } = await multipartComplete({ key: s3Key, uploadId, parts: completedParts });
     return confirmedUrl;
   }
 
-  // ── Mutation ─────────────────────────────────────────────────────────────────
+  // ── Public API ────────────────────────────────────────────────────────────────
 
-  const uploadMutation = useMutation({
-    mutationFn: async ({
-      episodeId,
-      chapterId,
-      variantTag,
-      file,
-      episode,
-    }: UploadVariantParams) => {
-      const progressKey = `${chapterId}:${variantTag}`;
-      const contentType = file.type || 'video/mp4';
+  /** Upload a file and resolve with its public URL. Throws on failure. */
+  async function uploadVariant(p: UploadVariantParams): Promise<string> {
+    const key = `${p.chapterId}:${p.variantTag}`;
+    const contentType = p.file.type || 'video/mp4';
+    const isMultipart = p.file.size > MULTIPART_THRESHOLD_BYTES;
 
-      // Choose path by file size.
-      const publicUrl =
-        file.size <= MULTIPART_THRESHOLD_BYTES
-          ? await runSinglePut(episodeId, chapterId, variantTag, file, contentType, progressKey)
-          : await runMultipart(episodeId, chapterId, variantTag, file, contentType, progressKey);
+    setProg(key, {
+      chapterId: p.chapterId,
+      variantTag: p.variantTag,
+      fileName: p.file.name,
+      fileSize: p.file.size,
+      multipart: isMultipart,
+    });
 
-      // Patch the episode's variant.videoUrl.
-      setProg(progressKey, { status: 'patching', progress: 100 });
+    try {
+      const publicUrl = isMultipart
+        ? await runMultipart(p, contentType, key)
+        : await runSinglePut(p, contentType, key);
 
-      const updated: EpisodeDetail = {
-        ...episode,
-        chapters: episode.chapters.map((ch) => {
-          if (ch.id !== chapterId) return ch;
-          return {
-            ...ch,
-            variants: ch.variants.map((v) =>
-              v.tag === variantTag ? { ...v, videoUrl: publicUrl } : v,
-            ),
-          };
-        }),
-      };
-
-      await updateEpisode(episodeId, updated);
-      await qc.invalidateQueries({ queryKey: episodeKey(episodeId) });
-
-      setProg(progressKey, { status: 'done' });
-      toast.success(`Uploaded variant "${variantTag}" for chapter "${chapterId}"`);
+      setProg(key, { status: 'done', progress: 100 });
+      toast.success('Video uploaded');
       return publicUrl;
-    },
-
-    onError: (err, variables) => {
-      const key = `${variables.chapterId}:${variables.variantTag}`;
+    } catch (err) {
       const msg = err instanceof Error ? err.message : 'Upload failed';
       setProg(key, { status: 'error', error: msg });
       toast.error(`Upload error: ${msg}`);
-    },
-  });
+      throw err;
+    }
+  }
 
-  return { uploadMutation, progresses };
+  return { progresses, uploadVariant };
 }

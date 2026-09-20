@@ -9,10 +9,11 @@ const SERIES_DIR = join(process.cwd(), 'series');
 /**
  * Source of truth for catalog data.
  *
- * When `CONTENT_API_URL` is set (e.g. http://localhost:3003/api/v1) the relay
- * reads series/episodes from the content-api management backend — the authoritative
- * store backed by DynamoDB. If it is unset or unreachable, the relay falls back to
- * the bundled `series/*.json` files so local/offline demos keep working.
+ * `CONTENT_API_URL` is the content-api BASE origin WITHOUT the `/api/v1` prefix
+ * (e.g. http://localhost:3003, or the deployed HTTP API endpoint). The `/api/v1`
+ * segment is added here — this must match rooms.service.ts, which also treats
+ * CONTENT_API_URL as the bare origin. If unset or unreachable, the relay falls
+ * back to the bundled `series/*.json` files so local/offline demos keep working.
  */
 const CONTENT_API_URL = process.env.CONTENT_API_URL?.replace(/\/$/, '') ?? '';
 
@@ -24,7 +25,7 @@ const episodeCache: Map<string, EpisodeDetail> = new Map();
 async function fetchFromApi<T>(path: string): Promise<T | null> {
   if (!CONTENT_API_URL) return null;
   try {
-    const res = await fetch(`${CONTENT_API_URL}${path}`);
+    const res = await fetch(`${CONTENT_API_URL}/api/v1${path}`);
     if (!res.ok) { logger.warn(`content-api ${path} → ${res.status}`); return null; }
     const body = await res.json() as { data: T };
     return body.data;

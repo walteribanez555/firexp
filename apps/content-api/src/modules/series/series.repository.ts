@@ -17,6 +17,7 @@ export interface ISeriesRepository {
 export interface CreateSeriesInput {
   title:        string;
   description:  string;
+  category?:    string;
   thumbnailUrl: string;
 }
 

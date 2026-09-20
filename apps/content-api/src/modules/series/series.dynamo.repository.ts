@@ -33,6 +33,7 @@ export class SeriesDynamoRepository implements ISeriesRepository {
       id:           randomUUID(),
       title:        input.title,
       description:  input.description,
+      category:     input.category ?? '',
       thumbnailUrl: input.thumbnailUrl,
       episodes:     [],
       createdAt:    now,

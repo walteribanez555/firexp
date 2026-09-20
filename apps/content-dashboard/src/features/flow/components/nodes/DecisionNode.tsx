@@ -1,9 +1,10 @@
 import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { HelpCircle, AlertTriangle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { NodeActionsToolbar } from '../../node-actions';
 import type { DecisionNodeData } from '../../lib/episode-to-flow';
 
-export function DecisionNode({ data, selected }: NodeProps) {
+export function DecisionNode({ id, data, selected }: NodeProps) {
   const d = data as DecisionNodeData;
   const { decision, inconsequential } = d;
 
@@ -14,6 +15,7 @@ export function DecisionNode({ data, selected }: NodeProps) {
         selected ? 'border-amber' : 'border-amber/40',
       ].join(' ')}
     >
+      <NodeActionsToolbar id={id} selected={selected} />
       <Handle type="target" position={Position.Top} />
       <div className="flex items-center gap-2 bg-amber/10 px-3 py-2 rounded-t-md">
         <HelpCircle className="h-4 w-4 text-amber shrink-0" />
