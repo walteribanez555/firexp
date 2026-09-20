@@ -61,10 +61,12 @@ jobs:
       - name: Set up QEMU (arm64)
         uses: docker/setup-qemu-action@v3
 
-      - name: Install deps + build shared types
+      - name: Install deps + build shared packages
+        # Both @fire-stick/types AND @fire-stick/story-graph must be built: the
+        # content-api Lambda imports story-graph, and CDK bundles it from dist/.
         run: |
           npm ci
-          npm run build --workspace @fire-stick/types
+          npm run build --workspace @fire-stick/types --workspace @fire-stick/story-graph
 
       - name: Install CDK deps
         working-directory: infra/cdk

@@ -81,8 +81,10 @@ jobs:
       - name: Install root deps
         run: npm ci
 
-      - name: Build @fire-stick/types
-        run: npm run build --workspace @fire-stick/types
+      - name: Build shared packages (types + story-graph)
+        # CDK bundles the content-api Lambda which imports @fire-stick/story-graph,
+        # so both dist/ builds must exist before synth.
+        run: npm run build --workspace @fire-stick/types --workspace @fire-stick/story-graph
 
       - name: Install CDK deps
         working-directory: infra/cdk

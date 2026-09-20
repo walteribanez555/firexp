@@ -102,7 +102,7 @@ unless noted.
 
 ```bash
 npm ci
-npm run build -w @fire-stick/types          # CDK bundles the Lambdas from source
+npm run build -w @fire-stick/types -w @fire-stick/story-graph   # Lambdas import both
 cd infra/cdk && npm ci
 npx cdk deploy FirexpContentStack FirexpAiStack -c environment=dev --require-approval never
 ```
