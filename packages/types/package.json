@@ -22,7 +22,7 @@
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
-    "typescript": "5.9.2"
+    "typescript": "^6.0.2"
   },
   "dependencies": {
     "zod": "^3.25.76"
