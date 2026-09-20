@@ -3,6 +3,10 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Re-publish Fire TV home-screen recommendation cards after a reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Recommendation cards are posted as notifications; required from Android 13+. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-feature
         android:name="android.hardware.touchscreen"
@@ -27,7 +31,28 @@
                 <category android:name="android.intent.category.LAUNCHER" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
+            <!-- Deep link: firexp://episode/<episodeId>[?series=<seriesId>] →
+                 jumps straight to the episode's room lobby, bypassing the catalog.
+                 Test: adb shell am start -a android.intent.action.VIEW \
+                   -d "firexp://episode/episode2" com.example.fire_hack -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="firexp" android:host="episode" />
+            </intent-filter>
         </activity>
+
+        <!-- Re-publishes the Fire TV recommendation row after a device reboot. -->
+        <receiver
+            android:name=".recommendations.BootRecommendationReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>

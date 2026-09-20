@@ -151,7 +151,7 @@ private fun ViewerRow(v: LobbyViewer) {
             )
         }
         Text(
-            text = if (v.done) "${v.total} / ${v.total} · done ✓" else "${v.answered} / ${v.total} · answering…",
+            text = if (v.done) "${v.total} / ${v.total} · done" else "${v.answered} / ${v.total} · answering…",
             fontSize = 14.sp,
             color = Firexp.dim,
             modifier = Modifier.width(120.dp),

@@ -91,7 +91,7 @@ private fun EndingTile(label: String, unlocked: Boolean) {
         contentAlignment = Alignment.Center,
     ) {
         Text(
-            text = if (unlocked) label else "🔒 LOCKED",
+            text = if (unlocked) label else "LOCKED",
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             color = if (unlocked) Firexp.darkink else Firexp.faint,

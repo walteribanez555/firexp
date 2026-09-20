@@ -12,7 +12,7 @@ package com.example.fire_hack
  */
 object Config {
     /** Deployed relay (firexp-dev-relay). Reachable by emulator, Fire TV and phones. */
-    private const val RELAY_CLOUD = "http://3.94.52.234:3001"
+    private const val RELAY_CLOUD = "http://34.227.161.148:3001"
 
     /** Host the TV app connects to (HTTP + WebSocket). */
     const val RELAY_HOST = RELAY_CLOUD

@@ -20,6 +20,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import androidx.tv.material3.*
 import com.example.fire_hack.Config
+import com.example.fire_hack.deeplink.DeepLink
+import com.example.fire_hack.recommendations.RecommendationsPublisher
 import com.example.fire_hack.data.model.EpisodeSummary
 import com.example.fire_hack.data.model.Series
 import com.example.fire_hack.data.model.SessionEvent
@@ -70,7 +72,13 @@ private sealed class AppScreen {
 
 @OptIn(ExperimentalTvMaterial3Api::class, UnstableApi::class)
 @Composable
-fun AppNavigation() {
+fun AppNavigation(
+    // A pending deep link (firexp://episode/<id>) parsed by MainActivity. When set,
+    // the app jumps straight into that episode's room lobby once the catalog loads,
+    // bypassing the catalog screen. Null in the normal launcher flow.
+    deepLink: DeepLink? = null,
+    onDeepLinkConsumed: () -> Unit = {},
+) {
     var screen by remember { mutableStateOf<AppScreen>(AppScreen.Loading) }
     val wsSource = remember { SessionWebSocketSource(Config.RELAY_HOST) }
     // viewer → gesture for the active decision window
@@ -87,8 +95,19 @@ fun AppNavigation() {
     // real catalog fetched from the backend — NO mock fallback
     val catalog = remember { mutableStateOf<List<Series>>(emptyList()) }
 
-    // ── ExoPlayer (owned for the whole session, released on dispose) ────────────
+    // Latest catalog + deep link captured for use inside LaunchedEffect blocks.
     val context = LocalContext.current
+
+    // Enter a room for the given series/episode (create room code + open the WS,
+    // land on the Connection/QR screen that phones scan to join). Shared by both
+    // the catalog tap and an inbound deep link.
+    fun enterRoom(series: Series, episode: EpisodeSummary) {
+        val code = generateRoomCode()
+        screen = AppScreen.Connection(series, episode, code)
+        activeRoom.value = code
+        activeEpisodeId.value = episode.id
+    }
+
     val playerRepo = remember { PlayerRepository(PlayerSource(context)) }
     val playProgress = remember { mutableStateOf(0f) }
     DisposableEffect(Unit) { onDispose { playerRepo.release() } }
@@ -103,6 +122,42 @@ fun AppNavigation() {
         }
         catalog.value = series
         screen = AppScreen.Catalog(series)
+    }
+
+    // ── Deep link → jump straight into the episode's room lobby ────────────────
+    // Fires when MainActivity delivers a firexp://episode/<id> intent (cold start
+    // or onNewIntent). We resolve the episode against the catalog (fetching it if
+    // the launch beat the startup fetch) and enter its room, bypassing the catalog.
+    LaunchedEffect(deepLink) {
+        val link = deepLink ?: return@LaunchedEffect
+        Log.i("AppNav", "Handling deep link: $link")
+
+        // Make sure we have a catalog to resolve against.
+        var series = catalog.value
+        if (series.isEmpty()) {
+            series = try {
+                withContext(Dispatchers.IO) { SeriesRemoteSource(Config.RELAY_HOST).fetchSeriesList() }
+            } catch (e: Exception) {
+                Log.e("AppNav", "Deep-link series fetch failed: ${e.message}")
+                emptyList()
+            }
+            if (series.isNotEmpty()) catalog.value = series
+        }
+
+        val match = series.firstNotNullOfOrNull { s ->
+            s.episodes.firstOrNull { it.id == link.episodeId }?.let { ep -> s to ep }
+        }
+
+        if (match != null) {
+            val (s, ep) = match
+            Log.i("AppNav", "Deep link resolved to series=${s.id} episode=${ep.id} → entering room")
+            enterRoom(s, ep)
+        } else {
+            // Unknown episode id — fall back to the catalog so the app is never stuck.
+            Log.w("AppNav", "Deep link episode '${link.episodeId}' not found in catalog; showing catalog")
+            if (screen is AppScreen.Loading) screen = AppScreen.Catalog(series)
+        }
+        onDeepLinkConsumed()
     }
 
     // ── WS event handler ──────────────────────────────────────────────────────
@@ -319,6 +374,19 @@ fun AppNavigation() {
         playerRepo.onError = null
     }
 
+    // ── Publish Fire TV home-screen recommendations when a story ends ──────────
+    // After an ending the room is a natural "continue where you left off" candidate,
+    // so we refresh the recommendation row. No-op on non-Fire-TV / when unsupported.
+    LaunchedEffect(screen is AppScreen.Ended) {
+        if (screen is AppScreen.Ended) {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    RecommendationsPublisher(context).publish(catalog.value)
+                }.onFailure { Log.w("AppNav", "Recommendation publish failed: ${it.message}") }
+            }
+        }
+    }
+
     fun backToCatalog() {
         screen = AppScreen.Catalog(catalog.value)
         activeRoom.value = null
@@ -339,12 +407,7 @@ fun AppNavigation() {
         is AppScreen.Catalog -> {
             SeriesCatalogScreen(
                 series = s.series,
-                onEpisodeSelected = { series, episode ->
-                    val code = generateRoomCode()
-                    screen = AppScreen.Connection(series, episode, code)
-                    activeRoom.value = code
-                    activeEpisodeId.value = episode.id
-                },
+                onEpisodeSelected = { series, episode -> enterRoom(series, episode) },
             )
         }
 
