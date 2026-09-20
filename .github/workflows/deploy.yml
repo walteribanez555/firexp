@@ -49,6 +49,13 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # Ensure Bedrock model access (auto-accepts an agreement if one is needed).
+      # Non-blocking: the deploy succeeds even if AI access isn't granted.
+      - name: Bedrock model access (preflight)
+        run: bash infra/scripts/bedrock-access.sh
+        env:
+          AWS_REGION: ${{ env.AWS_REGION }}
+
       # Enable arm64 emulation so cdk-assets can build the Graviton relay image
       # on the amd64 runner (fromAsset → docker build --platform linux/arm64).
       - name: Set up QEMU (arm64)

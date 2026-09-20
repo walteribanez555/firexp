@@ -27,11 +27,14 @@ Pick a path — the setup differs:
 | CDK bootstrap | automatic (in the workflow) | run once: `cd infra/cdk && npx cdk bootstrap` |
 | Setup needed | 2 repo secrets (see A) | AWS creds configured locally |
 
-**One shared account step (both paths, once):** enable **Bedrock model access** —
-Console → Amazon Bedrock → Model access → `Claude Haiku 4.5` + `Claude Sonnet 4.6`.
-IAM alone is not enough; without it the AI features return `AccessDeniedException`.
-It is **not** required for the deploy to succeed (only for runtime AI calls), and
-it **cannot** be automated (console/account action).
+**Bedrock model access** (account-level entitlement, separate from the IAM policy
+in `FirexpAiStack`): needed only for the AI features (recap/prompt-gen), not for
+the deploy to succeed. It is **automated** — the deploy runs
+`infra/scripts/bedrock-access.sh`, which checks `Claude Haiku 4.5` +
+`Claude Sonnet 4.6` and auto-accepts a model agreement if one is required. For
+entitlement-based Anthropic models it's usually already `AVAILABLE` (a no-op).
+Run it standalone anytime: `AWS_REGION=us-east-1 bash infra/scripts/bedrock-access.sh`.
+If a model needs the use-case form, do it once in Console → Bedrock → Model access.
 
 > **Why Docker (manual path only)?** Only the **relay** needs it — it runs on ECS
 > Fargate, so CDK builds & pushes its image (`ContainerImage.fromAsset`) during
@@ -59,8 +62,8 @@ gh secret set AWS_ACCESS_KEY_ID     -R <owner>/firexp --body "$(aws configure ge
 gh secret set AWS_SECRET_ACCESS_KEY -R <owner>/firexp --body "$(aws configure get aws_secret_access_key)"
 ```
 
-Everything else — bootstrap, image build/push, cross-stack wiring, seeding — is
-automatic. (Bedrock model access is the only account step; see Prerequisites.)
+Everything else — bootstrap, image build/push, cross-stack wiring, Bedrock model
+access, and seeding — is automatic. So the **only** setup is the two secrets above.
 
 ### Run it
 
