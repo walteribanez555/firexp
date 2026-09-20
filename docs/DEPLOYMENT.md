@@ -17,23 +17,26 @@ Everything is **AWS CDK** (`infra/cdk`). Account/region used: `557690620729` /
 
 ---
 
-## 0. Prerequisites (once)
+## 0. Prerequisites
 
-```bash
-aws sts get-caller-identity          # creds present, account 557690620729
-docker info                          # Docker running — ONLY needed to deploy the relay
-cd infra/cdk && npx cdk bootstrap    # only if CDKToolkit stack doesn't exist yet
-```
+Pick a path — the setup differs:
 
-> **Why Docker?** Only the **relay** needs it — it runs on ECS Fargate, so CDK
-> builds & pushes its container image (`ContainerImage.fromAsset`) during
-> `cdk deploy`. The Lambda stacks (content-api, prompt-generator) bundle with
-> local esbuild and need **no** Docker. If you don't want Docker locally, run
-> the **Deploy** GitHub Action — the runner builds the image for you.
+| | **A. GitHub Actions** (recommended) | **B. Manual CLI** |
+|---|---|---|
+| Local tooling | none | AWS CLI + Node 24 + Docker (Docker only for the relay) |
+| CDK bootstrap | automatic (in the workflow) | run once: `cd infra/cdk && npx cdk bootstrap` |
+| Setup needed | 2 repo secrets (see A) | AWS creds configured locally |
 
-**Enable Bedrock model access** (IAM is not enough): AWS Console → Amazon Bedrock
-→ Model access → request `Claude Haiku 4.5` + `Claude Sonnet 4.6`. Without this the
-AI features return `AccessDeniedException`.
+**One shared account step (both paths, once):** enable **Bedrock model access** —
+Console → Amazon Bedrock → Model access → `Claude Haiku 4.5` + `Claude Sonnet 4.6`.
+IAM alone is not enough; without it the AI features return `AccessDeniedException`.
+It is **not** required for the deploy to succeed (only for runtime AI calls), and
+it **cannot** be automated (console/account action).
+
+> **Why Docker (manual path only)?** Only the **relay** needs it — it runs on ECS
+> Fargate, so CDK builds & pushes its image (`ContainerImage.fromAsset`) during
+> `cdk deploy`. The Lambdas bundle with local esbuild (no Docker). The Actions
+> path builds the image on the runner, so you need nothing locally.
 
 ---
 
@@ -44,22 +47,20 @@ one click: bootstrap (idempotent) → `cdk deploy --all` (builds/pushes the rela
 image with `fromAsset`, orders content → ai → relay, wires cross-stack URLs) →
 seed DynamoDB → print the relay IP.
 
-### One-time setup (only these — the rest is automatic)
+### One-time setup — just 2 repo secrets
 
-1. **Repo secrets** (Settings → Secrets and variables → Actions → *New secret*):
-   - `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for an IAM user/role that can
-     deploy (the `infra-deploy` user has `AdministratorAccess`).
-   ```bash
-   # or from the CLI, using the keys already on this machine:
-   gh secret set AWS_ACCESS_KEY_ID     -R <owner>/firexp --body "$(aws configure get aws_access_key_id)"
-   gh secret set AWS_SECRET_ACCESS_KEY -R <owner>/firexp --body "$(aws configure get aws_secret_access_key)"
-   ```
-2. **Bedrock model access** (once, per account — cannot be automated): Console →
-   Amazon Bedrock → Model access → enable `Claude Haiku 4.5` + `Claude Sonnet 4.6`.
-   Only needed for the AI features (recap/prompt-gen); the deploy itself succeeds
-   without it.
+Settings → Secrets and variables → Actions → *New secret*:
+`AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for an IAM user/role that can
+deploy (the `infra-deploy` user has `AdministratorAccess`).
 
-CDK **bootstrap** is handled by the workflow (idempotent), so no manual step.
+```bash
+# or from the CLI, using the keys already on this machine:
+gh secret set AWS_ACCESS_KEY_ID     -R <owner>/firexp --body "$(aws configure get aws_access_key_id)"
+gh secret set AWS_SECRET_ACCESS_KEY -R <owner>/firexp --body "$(aws configure get aws_secret_access_key)"
+```
+
+Everything else — bootstrap, image build/push, cross-stack wiring, seeding — is
+automatic. (Bedrock model access is the only account step; see Prerequisites.)
 
 ### Run it
 
@@ -82,6 +83,14 @@ on:
 ---
 
 ## B. Manual CLI deploy
+
+Verify the local prerequisites first:
+
+```bash
+aws sts get-caller-identity          # creds present, account 557690620729
+docker info                          # Docker running — only needed for the relay
+cd infra/cdk && npx cdk bootstrap    # idempotent; only needed the first time
+```
 
 All commands assume `ENV=dev` (use `prod` for production). Run from the repo root
 unless noted.
