@@ -1,7 +1,7 @@
 import type {
   EpisodeDetail, WindowOpenMsg, WatchingMsg,
   Action, VoteMsg, JoinMsg, AssignedMsg,
-  WindowClosedMsg, StoryEndMsg, EpisodeStartMsg, LogEntry,
+  WindowClosedMsg, StoryEndMsg, EpisodeStartMsg, LogEntry, DecisionLog,
   TallyMsg, PingMsg, PongMsg,
 } from '@fire-stick/types';
 
@@ -53,30 +53,12 @@ function showHostBadge(visible: boolean) {
 
 function show(html: string) { $app.innerHTML = html; }
 
-// ── Debug log overlay ─────────────────────────────────────────────────────────
+// ── Debug log ─────────────────────────────────────────────────────────────────
+// No on-screen overlay; keep a quiet console trace for devtools only.
 
-const dbgLines: string[] = [];
-let $dbg: HTMLElement | null = null;
-
+const DEBUG = false;
 function dbg(msg: string) {
-  const ts = new Date().toLocaleTimeString('en', { hour12: false });
-  const line = `${ts} ${msg}`;
-  console.log('[phone]', line);
-  dbgLines.push(line);
-  if (dbgLines.length > 18) dbgLines.shift();
-  if (!$dbg) {
-    $dbg = document.createElement('div');
-    $dbg.id = 'dbg';
-    Object.assign($dbg.style, {
-      position: 'fixed', bottom: '0', left: '0', right: '0',
-      background: 'rgba(0,0,0,.85)', color: '#0f0', fontFamily: 'monospace',
-      fontSize: '10px', padding: '6px 8px', zIndex: '9999',
-      maxHeight: '160px', overflowY: 'auto', lineHeight: '1.4',
-    });
-    document.body.appendChild($dbg);
-  }
-  $dbg.innerHTML = dbgLines.map(l => `<div>${l}</div>`).join('');
-  $dbg.scrollTop = $dbg.scrollHeight;
+  if (DEBUG) console.debug('[phone]', msg);
 }
 
 // ── Reference clock (B2) ──────────────────────────────────────────────────────
@@ -168,6 +150,38 @@ const viewerColors = new Map<number, string>();
 let currentDecisionId: string | null   = null;
 let currentVoteAction:  Action | null  = null;
 let liveTally:          Record<string, number> = {};
+
+// Client-side session log — built live from watching/window_closed so the
+// Library tabs have data even if the relay's server-side log is empty
+// (e.g. the room was cleaned up, or video didn't drive a full playthrough).
+let watchingChapterId = '';
+let watchingVariant   = '';
+const clientLog: LogEntry[] = [];
+
+function clientChapterEntry(chapterId: string): LogEntry {
+  let e = clientLog.find(x => x.chapter === chapterId);
+  if (!e) { e = { chapter: chapterId, variantPlayed: watchingVariant, decisions: [] }; clientLog.push(e); }
+  return e;
+}
+
+function recordClientDecision(win: WindowOpenMsg, chosen: string): void {
+  const ch = episode?.chapters.find(c => c.title === win.chapterTitle);
+  const chapterId = ch?.id ?? (watchingChapterId || win.chapterTitle);
+  const entry = clientChapterEntry(chapterId);
+  if (entry.decisions.some(d => d.decisionId === win.decisionId)) return;
+  const votes = Object.entries(liveTally).flatMap(([action, n]) =>
+    Array.from({ length: n }, (_, i) => ({ viewer: i + 1, action })));
+  const sorted = Object.values(liveTally).sort((a, b) => b - a);
+  entry.decisions.push({
+    decisionId: win.decisionId,
+    phase:      win.phase,
+    chosen,
+    votes,
+    margin:     (sorted[0] ?? 0) - (sorted[1] ?? 0),
+    flagsAfter: {},
+    ts:         Date.now(),
+  } as unknown as DecisionLog);
+}
 
 // ── WebSocket ─────────────────────────────────────────────────────────────────
 
@@ -296,6 +310,7 @@ function dispatch(msg: IncomingMsg) {
       const closedWindow     = activeWindow;
       activeWindow      = null;
       currentDecisionId = null;
+      if (closedWindow) recordClientDecision(closedWindow, msg.chosen);
       vibrate([80, 40, 80]);
       void (async () => {
         const stats = await fetchEpisodeStats();
@@ -305,6 +320,9 @@ function dispatch(msg: IncomingMsg) {
     }
 
     case 'watching':
+      watchingChapterId = msg.chapterId;
+      watchingVariant   = msg.variantTag;
+      clientChapterEntry(msg.chapterId).variantPlayed = msg.variantTag;
       showWatching(msg);
       break;
 
@@ -358,8 +376,10 @@ async function loadLibrary() {
   try {
     const res  = await fetch(`${relayHost}/api/v1/rooms/${roomCode}`);
     const body = await res.json() as { data: { log: LogEntry[] } };
-    sessionLog = body.data.log;
+    sessionLog = body.data.log ?? [];
   } catch {}
+  // Fall back to the log we built client-side if the server has none.
+  if (!sessionLog || sessionLog.length === 0) sessionLog = clientLog;
   showLibrary('journey');
 }
 

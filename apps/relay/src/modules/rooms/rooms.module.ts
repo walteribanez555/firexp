@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { roomsService } from './rooms.service';
 import { seriesService } from '../series/series.service';
+import { twitchAdapter } from '../twitch/twitch.adapter';
 import { NotFoundException, BadRequestException, handleException } from '../../common/exceptions';
 import type { AppEnv } from '../../app.types';
 
@@ -90,6 +91,37 @@ roomsRouter.post('/:code/questionnaire', async (c) => {
     roomsService.broadcastAll(code, JSON.stringify({ type: 'episode_start', chapterId, flags }));
 
     return c.json({ data: { chapterId, flags } });
+  } catch (err) {
+    return handleException(err, c);
+  }
+});
+
+// POST /api/v1/rooms/:code/twitch  { channel }
+// Attach a Twitch channel to a room at runtime so its chat becomes audience votes.
+// Optional feature — only affects this room; the relay is unchanged otherwise.
+roomsRouter.post('/:code/twitch', async (c) => {
+  try {
+    const code = c.req.param('code').toUpperCase();
+    const body = await c.req.json().catch(() => null) as { channel?: string } | null;
+    if (!body?.channel || typeof body.channel !== 'string') {
+      throw new BadRequestException('Missing body: { channel: string }');
+    }
+
+    const attached = twitchAdapter.attach(code, body.channel);
+    if (!attached) throw new BadRequestException('Invalid Twitch channel');
+
+    return c.json({ data: { code, channel: attached } });
+  } catch (err) {
+    return handleException(err, c);
+  }
+});
+
+// DELETE /api/v1/rooms/:code/twitch  → detach + close the IRC socket for a room.
+roomsRouter.delete('/:code/twitch', (c) => {
+  try {
+    const code = c.req.param('code').toUpperCase();
+    twitchAdapter.detach(code);
+    return c.json({ data: { code, detached: true } });
   } catch (err) {
     return handleException(err, c);
   }

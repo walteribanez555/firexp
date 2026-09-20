@@ -226,14 +226,18 @@ export const roomsService = {
     logger.info(`Room ${code}: episode_start episodeId=${episodeId}`);
   },
 
-  /** Called when TV sends `window_open`. Sets openWindow and broadcasts tally. */
-  handleWindowOpen(code: string, decisionId: string, duration: number): void {
+  /** Called when TV sends `window_open`. Sets openWindow and broadcasts tally.
+   *  `options` are the ordered gesture keys (index 0 = A/1) so audience chat
+   *  votes (`!a`, `!1`) can be resolved to an action. */
+  handleWindowOpen(code: string, decisionId: string, duration: number, options?: string[]): void {
     const room = rooms.get(code);
     if (!room) return;
     room.openWindow = {
       decisionId,
       closesAt: Date.now() + duration,
       tally:    {},
+      ...(options && options.length ? { options } : {}),
+      audienceVotes: new Map(),
     };
     logger.info(`Room ${code}: window_open decisionId=${decisionId} closesAt=${room.openWindow.closesAt}`);
   },
@@ -262,6 +266,55 @@ export const roomsService = {
 
     room.openWindow.tally[action] = (room.openWindow.tally[action] ?? 0) + 1;
     return { ...room.openWindow.tally };
+  },
+
+  /** True if the room currently has an open voting window. */
+  hasOpenWindow(code: string): boolean {
+    return Boolean(rooms.get(code)?.openWindow);
+  },
+
+  /**
+   * Inject a Twitch **audience** vote into the live tally.
+   *
+   * Audience rule: these votes COUNT toward the tally/winner but are NOT phone
+   * viewers — they never re-profile flags and are never persisted as viewer
+   * profiles. Flags are only ever applied from the TV's `log_entry` (phone
+   * votes), which the audience path never touches, so this is inherently safe.
+   *
+   * `optionIndex` is 0-based (`!a`/`!1` → 0). It is resolved to a gesture via
+   * the current window's `options[]`. One vote per Twitch username per window;
+   * a later vote from the same username overwrites the earlier one.
+   *
+   * Returns the updated tally + resolved action, or null if there is no open
+   * window / the index is out of range / this vote changed nothing.
+   */
+  handleAudienceVote(
+    code: string,
+    twitchUser: string,
+    optionIndex: number,
+  ): { tally: Record<string, number>; decisionId: string; action: string } | null {
+    const room = rooms.get(code);
+    if (!room?.openWindow) return null;
+
+    const options = room.openWindow.options;
+    if (!options || optionIndex < 0 || optionIndex >= options.length) return null;
+
+    const action = options[optionIndex];
+    const votes  = room.openWindow.audienceVotes ?? (room.openWindow.audienceVotes = new Map());
+
+    const prev = votes.get(twitchUser);
+    if (prev === action) return null; // no-op: same vote again
+
+    // Overwrite: retract the previous audience choice from the tally.
+    if (prev !== undefined) {
+      room.openWindow.tally[prev] = Math.max(0, (room.openWindow.tally[prev] ?? 0) - 1);
+      if (room.openWindow.tally[prev] === 0) delete room.openWindow.tally[prev];
+    }
+
+    votes.set(twitchUser, action);
+    room.openWindow.tally[action] = (room.openWindow.tally[action] ?? 0) + 1;
+
+    return { tally: { ...room.openWindow.tally }, decisionId: room.openWindow.decisionId, action };
   },
 
   applyQuestionnaire(

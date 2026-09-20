@@ -15,6 +15,13 @@ export interface OpenWindow {
   decisionId: string;
   closesAt:   number;   // Unix ms — in relay server time
   tally:      Record<string, number>;   // { [action]: count }
+  /** Ordered gesture keys for this window (index 0 = option A/1). Used to map
+   *  Twitch audience `!a`/`!1` chat votes → the matching gesture/action. */
+  options?:   string[];
+  /** Per-Twitch-username → chosen action, for the CURRENT window only.
+   *  Lets an audience member overwrite their vote and dedupes double-votes.
+   *  Reset on every window_open. Never persisted. */
+  audienceVotes?: Map<string, string>;
 }
 
 export interface RoomState {

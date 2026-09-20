@@ -6,6 +6,7 @@ import { serve } from '@hono/node-server';
 import { app } from './app';
 import { createLogger, config } from './config';
 import { roomsService } from './modules/rooms/rooms.service';
+import { twitchAdapter } from './modules/twitch/twitch.adapter';
 import { AnyIncomingMsgSchema } from '@fire-stick/types/schemas';
 
 const logger = createLogger('Server');
@@ -108,7 +109,9 @@ wss.on('connection', (ws, req) => {
 
     // ── window_open (TV → relay → phones) ────────────────────────────────────
     if (msg.type === 'window_open') {
-      roomsService.handleWindowOpen(code, msg.decisionId, msg.duration);
+      // Pass ordered gesture keys so Twitch audience votes (!a/!1) can map by index.
+      const optionGestures = msg.options.map((o) => o.gesture);
+      roomsService.handleWindowOpen(code, msg.decisionId, msg.duration, optionGestures);
       roomsService.broadcast(ws, code, rawStr);
       return;
     }
@@ -155,6 +158,7 @@ wss.on('connection', (ws, req) => {
     // ── story_end (TV → relay → phones) ──────────────────────────────────────
     if (msg.type === 'story_end') {
       roomsService.close(code);
+      twitchAdapter.detach(code); // clean up any attached Twitch IRC socket
       roomsService.broadcast(ws, code, rawStr);
       return;
     }
@@ -174,5 +178,10 @@ wss.on('connection', (ws, req) => {
   });
   ws.on('error', (err) => { logger.error('WebSocket error', err); roomsService.leave(ws); });
 });
+
+// ── Optional Twitch chat → audience votes adapter ─────────────────────────────
+// Inert unless TWITCH_CHANNEL + TWITCH_ROOM are set (or a channel is attached at
+// runtime via POST /api/v1/rooms/:code/twitch).
+twitchAdapter.initFromEnv();
 
 logger.info(`WebSocket server attached on port ${PORT}`);
