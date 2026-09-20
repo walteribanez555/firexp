@@ -69,15 +69,29 @@ Tech Implementation · Design · Potential Impact · Quality of Idea.
 
 ## Guion del video (0:00–3:00)
 
+**Reglas de relato (obligatorias):**
+- **NADA de "arquitectura" antes del minuto 2.** El diagrama y el stack solo aparecen en la sección de "How we built it", pasado 2:00.
+- **Los primeros 45s Y los últimos 30s son Fire TV** (la sala, la TV, los teléfonos, el corte de rama). La nube va **en el medio** como soporte, nunca como protagonista.
+- Se lidera con la **tensión humana** (cuatro en el sofá, la decisión atrapada en una cabeza), luego el **producto**, y solo después el **cómo**.
+
 | Tiempo | Qué se ve | Qué se dice |
 |---|---|---|
-| 0:00–0:20 | Sala, 3 personas, Fire TV, QR | "watching together is passive; every 'what would you do?' stays in your head" |
-| 0:20–0:45 | Split TV+teléfono: escanean, cuestionario, `episode_start` | "No app to install. Your phone becomes the controller." |
+| 0:00–0:20 | Sala, 4 personas, Fire TV, QR (Fire TV protagonista) | "Four on a couch. The show hits a fork — and every 'what would *you* do?' dies in one person's head." |
+| 0:20–0:45 | Split TV+teléfono: escanean, cuestionario, `episode_start` (Fire TV protagonista) | "No app to install. The whole room becomes the controller — and nobody looks away from the TV." |
 | 0:45–1:30 | Decisión: tally moviéndose, alguien cambia su voto a 3 s, cierre → la TV corta de rama sin corte | "The TV never breaks immersion. The decision lives in your hand." |
-| 1:30–1:55 | Final + Library: "your room chose A · 62% of rooms chose B" + recap de Bedrock | "Every room gets its own cut. And its own reason to replay." |
+| 1:30–1:55 | Final + Library: "your room chose A · 62% of rooms chose B" + recap de Bedrock/Nova | "Every room gets its own cut. And its own reason to replay." |
 | 1:55–2:25 | CMS: React Flow, simulador de flags, warning de decisión sin consecuencia, upload a S3 | "Creators build the graph, not the versions." |
-| 2:25–2:50 | Arquitectura 10 s + tests de paridad TS/Kotlin | "Kotlin on Fire OS, DynamoDB, S3+CloudFront, Bedrock, all CDK." |
-| 2:50–3:00 | Repo, licencia, tracks | Cierre |
+| 2:25–2:45 | **Recién aquí:** arquitectura 10 s + tests de paridad TS/Kotlin (nube = soporte) | "TV is the brain; the relay is dumb. Kotlin on Fire OS, DynamoDB, S3+CloudFront, Bedrock/Nova, all CDK." |
+| 2:45–3:00 | **Vuelta a Fire TV:** la sala reacciona a su final + repo/licencia/tracks | "Twitch taught audiences to decide together. Firexp is the show where the room votes — and the TV never breaks." |
+
+### Checklist de Story-headers (Devpost + video)
+El relato debe recorrer, en este orden, tanto en la descripción como en el video:
+- [ ] **Inspiration** — la escena del sofá; toda interactividad previa (Bandersnatch, second-screen, X-Ray) es individual; Firexp invierte: la sala decide.
+- [ ] **What it does** — QR → cuestionario → votan → la TV nunca muestra UI de decisión → "62% of rooms" + recap Bedrock/Nova.
+- [ ] **How we built it** — engine puro compartido (`story-graph`), TV = cerebro (`StoryEngine` en el dispositivo), relay tonto, AWS. **El diagrama va AQUÍ, no antes.**
+- [ ] **Challenges we ran into** — reloj de referencia phone-to-phone; decisiones "during" que encajan en toda variante; rodar con continuidad para que los cortes de rama no salten.
+- [ ] **What's next** — remote-as-backup-voter, votos por Twitch chat, listing en Appstore.
+- [ ] Sin la palabra "arquitectura"/"architecture" antes de "How we built it".
 
 ---
 

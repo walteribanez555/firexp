@@ -3,6 +3,7 @@
 _Devpost requires feedback on **every** tool/API/SDK used. One entry each: what we used it for · what worked · what needs work · onboarding · would we use it again._
 
 ## Fire OS / Android (Kotlin)
+- **Ecosystem fit:** X-Ray already proved the second screen belongs in the living room — it tells you *who's on screen*. Firexp is the next step on the same device: the room *decides what they do*, and the TV never breaks immersion to show it.
 - **Used for:** the TV app (`fire-hack`) — catalog, QR pairing, the autonomous StoryEngine, playback.
 - **Worked:** standard Android tooling on Fire OS; the Android TV emulator (`Television_1080p` AVD) let us iterate without hardware.
 - **Needs work:** the emulator can't reach the host LAN IP, so the phone-facing QR and the TV's own relay host need different values (`10.0.2.2` vs LAN IP) — a real footgun for second-screen apps.
@@ -21,8 +22,9 @@ _Devpost requires feedback on **every** tool/API/SDK used. One entry each: what 
 - **Needs work:** `DefaultPreloadManager` (1.3+) is powerful but the integration surface is heavy for a simple "prefetch the next clip" case — we fell back to `CacheWriter`.
 - **Again:** yes.
 
-## Amazon Bedrock (Converse API)
-- **Used for:** generating decision prompts (tool-use / structured output) and end-of-episode room recaps. Model: `us.anthropic.claude-haiku-4-5`.
+## Amazon Bedrock (Converse API) + Amazon Nova
+- **Ecosystem fit:** Twitch brought audience participation to streaming; Firexp brings it to the living room — and Bedrock is what turns each room's unique path into a personalized, spoiler-safe recap ("your room chose A · 62% of rooms chose B"). Amazon Nova is the natural in-house model for that recap/prompt generation on Fire TV.
+- **Used for:** generating decision prompts (tool-use / structured output) and end-of-episode room recaps via the Converse API. Models: `us.anthropic.claude-haiku-4-5`; **Amazon Nova** for on-device-adjacent recap generation.
 - **Worked:** the Converse API + tool-use gives clean structured JSON; latency is fine for authoring.
 - **Needs work:** IAM permission ≠ model access — you still must opt in per model in the console, which isn't obvious from the SDK errors.
 - **Again:** yes.

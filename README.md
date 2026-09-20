@@ -4,10 +4,20 @@
 
 > Also available in [Español](README.es.md)
 
-**Cinematic interactive series where every viewer's phone becomes the remote.** The story
-branches in real time based on audience decisions: the TV plays uninterrupted video while all
-interaction happens on the phone, and the backend resolves the story branch silently behind the
-scenes.
+Four people on a couch. The show hits a fork, and every "what would *you* do?" dies quietly in
+one person's head. Every fix so far has been individual — Bandersnatch hands one remote to one
+person; X-Ray informs whoever holds the phone but gives them no power and doesn't involve the
+others. **Firexp inverts it: the room decides, and nobody stares at a screen that isn't the TV.**
+
+> Twitch taught audiences to decide together. X-Ray taught Amazon that the second screen belongs
+> in the living room. **Firexp is the show where the room votes from their phones and the TV never breaks.**
+
+### What it does
+
+1. The Fire TV shows an episode; a **QR** appears — each viewer opens a phone web page, no install.
+2. A short **questionnaire** sets the room's profile (numeric flags).
+3. As the story plays, decisions appear **only on the phones**; viewers **vote** (live tally, revocable until the timer closes).
+4. The **TV never shows decision UI** — it plays continuous video and silently cuts to the branch the room chose. Different rooms reach different endings, then: "your room chose A · 62% of rooms chose B" + a **Bedrock/Nova** recap.
 
 **Track:** Fire TV (Fire OS / Android) · **Mini challenges:** AWS Builder (Bedrock) · Open Source
 
@@ -29,7 +39,7 @@ The audience builds their own version of the story:
 
 ---
 
-## 2. Architecture
+## 2. How we built it (architecture)
 
 ```
                  ┌───────────────── DynamoDB ─────────────────┐

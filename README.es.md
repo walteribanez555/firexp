@@ -1,8 +1,19 @@
 # Firexp — Narrativa interactiva ramificada para Fire TV
 
-Cine/serie **interactivo** donde el **teléfono de cada espectador es el mando**. La historia se
-bifurca en tiempo real según las decisiones del público: la TV solo reproduce video continuo, toda
-la interacción ocurre en el teléfono y el backend resuelve la rama **por detrás**.
+Cuatro personas en un sofá. La serie llega a una bifurcación y cada "¿qué harías *tú*?" se queda
+callado en la cabeza de una sola persona. Todo intento previo fue individual — Bandersnatch le da
+un mando a una persona; X-Ray informa a quien sostiene el teléfono pero no le da poder y no
+involucra a los demás. **Firexp lo invierte: la sala decide, y nadie mira una pantalla que no sea la TV.**
+
+> Twitch enseñó a las audiencias a decidir juntas. X-Ray le enseñó a Amazon que la segunda pantalla
+> pertenece a la sala. **Firexp es la serie donde la sala vota desde sus teléfonos y la TV nunca se rompe.**
+
+### Qué hace
+
+1. La Fire TV muestra un episodio; aparece un **QR** — cada espectador abre una web en el teléfono, sin instalar.
+2. Un **cuestionario** corto fija el perfil de la sala (flags numéricos).
+3. Mientras la historia corre, las decisiones aparecen **solo en los teléfonos**; se **vota** (tally en vivo, revocable hasta que cierra el timer).
+4. La **TV nunca muestra UI de decisión** — reproduce video continuo y corta en silencio a la rama que eligió la sala. Distintas salas llegan a distintos finales, y luego: "tu sala eligió A · 62% de las salas eligió B" + un recap de **Bedrock/Nova**.
 
 **Track:** Fire TV (Fire OS / Android) · **Mini challenges:** AWS Builder (Bedrock) · Open Source
 
@@ -24,7 +35,7 @@ El público construye su versión de la historia:
 
 ---
 
-## 2. Arquitectura
+## 2. Cómo lo construimos (arquitectura)
 
 ```
                  ┌───────────────── DynamoDB ─────────────────┐
