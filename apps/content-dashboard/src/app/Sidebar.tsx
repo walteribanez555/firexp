@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
-  Plus, ChevronRight, ChevronLeft, MoreVertical, Pencil, Trash2, Moon, Sun, Search, X,
+  Plus, ChevronRight, ChevronLeft, MoreVertical, Pencil, Trash2, Moon, Sun, Search, X, Sparkles,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,6 +21,7 @@ import {
   useCreateSeries,
   useUpdateSeries,
   useDeleteSeries,
+  useGenerateSeriesCover,
   useCreateEpisode,
   useDeleteEpisode,
 } from '@/features/series/hooks/use-series';
@@ -86,6 +87,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const createSeries = useCreateSeries();
   const updateSeries = useUpdateSeries();
   const destroySeries = useDeleteSeries();
+  const generateCover = useGenerateSeriesCover();
   const createEpisode = useCreateEpisode(epSeriesId);
   const destroyEpisode = useDeleteEpisode(epSeriesId);
 
@@ -199,6 +201,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               onToggle={() => toggle(series.id)}
               onAddEpisode={() => setEpisodeDialogSeriesId(series.id)}
               onEditSeries={() => { setEditingSeries(series); setSeriesDialogOpen(true); }}
+              onGenerateCover={() => generateCover.mutate({ id: series.id })}
+              coverPending={generateCover.isPending && generateCover.variables?.id === series.id}
               onDeleteSeries={() => setDeleteSeriesTarget(series)}
               onDeleteEpisode={(ep) => setDeleteEpisodeTarget({ episode: ep, seriesId: series.id })}
             />
@@ -282,6 +286,8 @@ function SeriesItem({
   onToggle,
   onAddEpisode,
   onEditSeries,
+  onGenerateCover,
+  coverPending,
   onDeleteSeries,
   onDeleteEpisode,
 }: {
@@ -291,6 +297,8 @@ function SeriesItem({
   onToggle: () => void;
   onAddEpisode: () => void;
   onEditSeries: () => void;
+  onGenerateCover: () => void;
+  coverPending: boolean;
   onDeleteSeries: () => void;
   onDeleteEpisode: (ep: EpisodeSummary) => void;
 }) {
@@ -339,6 +347,13 @@ function SeriesItem({
             </DropdownMenuItem>
             <DropdownMenuItem onClick={onEditSeries}>
               <Pencil className="mr-2 h-4 w-4" /> Edit series
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={(e) => { e.preventDefault(); onGenerateCover(); }}
+              disabled={coverPending}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              {coverPending ? 'Generating…' : 'Generate cover (Nova)'}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem className="text-destructive focus:text-destructive" onClick={onDeleteSeries}>

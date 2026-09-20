@@ -8,6 +8,10 @@ export interface AppConfig {
   contentBucket:  string;
   cdnBase:        string | null;
   presignTtl:     number;
+  /** Bedrock text model for the recap (Converse). Amazon Nova Lite by default. */
+  bedrockModelId: string;
+  /** Bedrock image model for cover art (InvokeModel). Amazon Nova Canvas. */
+  bedrockImageModelId: string;
   storage:        'dynamo' | 'memory';
   logLevel:       'debug' | 'info' | 'warn' | 'error';
   nodeEnv:        string;
@@ -47,6 +51,11 @@ function loadConfig(): AppConfig {
     contentBucket,
     cdnBase:        process.env['CDN_BASE'] ?? null,
     presignTtl:     Number(process.env['PRESIGN_TTL']) || 300,
+    // Amazon Nova Lite is the default recap model (supports the Bedrock Converse
+    // API). Override with BEDROCK_MODEL_ID (e.g. an Anthropic profile).
+    bedrockModelId:      process.env['BEDROCK_MODEL_ID'] ?? 'us.amazon.nova-lite-v1:0',
+    // Amazon Nova Canvas — cover-art image generation (InvokeModel).
+    bedrockImageModelId: process.env['BEDROCK_IMAGE_MODEL_ID'] ?? 'amazon.nova-canvas-v1:0',
     storage,
     logLevel:       isProd
                       ? 'warn'

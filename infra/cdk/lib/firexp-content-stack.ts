@@ -4,6 +4,7 @@ import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as lambdaNodejs from "aws-cdk-lib/aws-lambda-nodejs";
 import * as s3 from "aws-cdk-lib/aws-s3";
@@ -15,6 +16,21 @@ import * as path from "path";
 // resolves the monorepo workspace and uses the root lockfile.
 // __dirname is always available here (CJS output — no "type":"module" in package.json).
 const REPO_ROOT = path.join(__dirname, "..", "..", "..");
+
+// ── Bedrock models used by the content-api ────────────────────────────────────
+// The content-api Lambda calls Bedrock for two features:
+//   • End-of-episode recap  → Converse API on a text model (Amazon Nova Lite,
+//     with the Anthropic profiles kept as optional overrides).
+//   • Series/episode cover art → InvokeModel on Amazon Nova Canvas.
+// These MUST match the model IDs granted in FirexpAiStack. We grant the same
+// least-privilege InvokeModel here (in code) so the content-api role has Bedrock
+// access without a manual post-deploy `attach-role-policy` step.
+const CONTENT_BEDROCK_MODEL_IDS = [
+  "us.amazon.nova-lite-v1:0", // recap (default, Converse)
+  "us.anthropic.claude-haiku-4-5-20251001-v1:0", // recap override
+  "us.anthropic.claude-sonnet-4-6", // recap override
+  "us.amazon.nova-canvas-v1:0", // cover-art generation (InvokeModel)
+];
 
 export interface FirexpContentStackProps extends cdk.StackProps {
   /** Deployment stage: "dev" | "prod" (or any custom name). */
@@ -327,6 +343,12 @@ export class FirexpContentStack extends cdk.Stack {
           PRESIGN_TTL: "300",
           // Storage backend selector — "dynamo" is the only supported value now
           STORAGE: "dynamo",
+          // Bedrock text model for the recap (Amazon Nova Lite by default, Converse API).
+          // Override with -c bedrockModelId=<id>. Nova Canvas (image) is a fixed
+          // internal constant in the app — no env needed.
+          BEDROCK_MODEL_ID:
+            (this.node.tryGetContext("bedrockModelId") as string | undefined) ??
+            "us.amazon.nova-lite-v1:0",
         },
       });
 
@@ -337,6 +359,30 @@ export class FirexpContentStack extends cdk.Stack {
       // grantReadWrite covers s3:GetObject, s3:PutObject, s3:DeleteObject —
       // all needed for presigned URL generation and direct Lambda operations.
       contentBucket.grantReadWrite(contentApiFn);
+
+      // ── Bedrock invoke grant (in-code — closes the IAM gap) ──────────────────
+      // The content-api calls Bedrock for the recap (Converse) and Nova Canvas
+      // cover generation (InvokeModel). Grant InvokeModel on both the
+      // inference-profile and foundation-model ARN forms for each model, matching
+      // FirexpAiStack. This removes the previous manual `attach-role-policy` step.
+      const bedrockModelArns = CONTENT_BEDROCK_MODEL_IDS.flatMap((mid) => {
+        const fmId = mid.replace(/^us\./, "");
+        return [
+          `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/${mid}`,
+          `arn:aws:bedrock:${this.region}::foundation-model/${fmId}`,
+        ];
+      });
+      contentApiFn.addToRolePolicy(
+        new iam.PolicyStatement({
+          sid: "BedrockInvokeContentApi",
+          effect: iam.Effect.ALLOW,
+          actions: [
+            "bedrock:InvokeModel",
+            "bedrock:InvokeModelWithResponseStream",
+          ],
+          resources: bedrockModelArns,
+        })
+      );
     }
 
     // ─────────────────────────────────────────────────────────────────────────

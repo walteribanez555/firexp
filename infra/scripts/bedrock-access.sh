@@ -15,8 +15,10 @@ set -uo pipefail
 
 REGION="${AWS_REGION:-us-east-1}"
 MODELS=(
-  "anthropic.claude-haiku-4-5-20251001-v1:0"
-  "anthropic.claude-sonnet-4-6"
+  "amazon.nova-lite-v1:0"                     # default text model (recap + prompts, Converse)
+  "amazon.nova-canvas-v1:0"                   # cover-art generation (Nova Canvas, InvokeModel)
+  "anthropic.claude-haiku-4-5-20251001-v1:0"  # optional Anthropic override
+  "anthropic.claude-sonnet-4-6"               # optional Anthropic override
 )
 
 for M in "${MODELS[@]}"; do

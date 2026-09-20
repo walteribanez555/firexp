@@ -30,6 +30,18 @@ export function deleteSeries(id: string): Promise<void> {
   return apiClient.delete<void>(`/series/${id}`);
 }
 
+export interface GenerateCoverResult {
+  thumbnailUrl: string;
+  coverUrl: string;
+  generated: boolean;
+  uploaded: boolean;
+}
+
+/** Generate series cover art with Amazon Nova Canvas (Bedrock). */
+export function generateSeriesCover(id: string, prompt?: string): Promise<GenerateCoverResult> {
+  return apiClient.post<GenerateCoverResult>(`/series/${id}/cover`, prompt ? { prompt } : {});
+}
+
 // ─── Episodes ──────────────────────────────────────────────────────────────
 
 export function fetchEpisode(id: string): Promise<EpisodeDetail> {

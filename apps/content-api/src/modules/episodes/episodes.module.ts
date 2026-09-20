@@ -7,6 +7,7 @@ import { EpisodesMemoryRepository } from './episodes.memory.repository';
 import { EpisodesDynamoRepository } from './episodes.dynamo.repository';
 import { getSeriesRepo } from '../series/series.module';
 import { getSessionsRepo } from '../sessions/sessions.module';
+import { generateCover } from '../covers/covers.service';
 import { validateEpisode } from '@fire-stick/story-graph';
 
 const logger = createLogger('EpisodesModule');
@@ -89,6 +90,55 @@ episodesRouter.get('/:id/stats', async (c) => {
     const id = c.req.param('id');
     const stats = await getSessionsRepo().getEpisodeStats(id);
     return c.json({ data: stats });
+  } catch (err) {
+    return handleException(err, c);
+  }
+});
+
+// POST /api/v1/episodes/:id/cover
+// Body (optional): { prompt?: string }
+// Generates episode cover art with Amazon Nova Canvas, uploads it, and syncs the
+// thumbnail into the parent series.episodes stub. Returns the CDN URL.
+episodesRouter.post('/:id/cover', async (c) => {
+  try {
+    const id = c.req.param('id');
+
+    const episode = await getEpisodesRepo().findById(id);
+    if (!episode) throw new NotFoundException('Episode not found');
+
+    let prompt: string | undefined;
+    try {
+      const body = await c.req.json<{ prompt?: string }>();
+      prompt = body?.prompt;
+    } catch {
+      // Optional body.
+    }
+
+    const cover = await generateCover({
+      id,
+      prompt,
+      title: episode.title,
+      kind:  'episode-covers',
+    });
+
+    // Sync the new thumbnail into the series.episodes stub (best-effort).
+    if (cover.uploaded) {
+      await getSeriesRepo().syncEpisode(episode.seriesId, {
+        id:           episode.id,
+        number:       episode.number,
+        title:        episode.title,
+        thumbnailUrl: cover.url,
+      }).catch(() => { /* best-effort */ });
+    }
+
+    return c.json({
+      data: {
+        thumbnailUrl: cover.url,
+        coverUrl:     cover.url,
+        generated:    cover.generated,
+        uploaded:     cover.uploaded,
+      },
+    });
   } catch (err) {
     return handleException(err, c);
   }

@@ -19,7 +19,9 @@ function loadConfig(): AppConfig {
   return {
     port:            Number(process.env.PORT) || 3002,
     awsRegion:       process.env.AWS_REGION ?? 'us-east-1',
-    bedrockModelId:  process.env.BEDROCK_MODEL_ID ?? 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    // Amazon Nova Lite by default (Converse API); override with BEDROCK_MODEL_ID
+    // (e.g. an Anthropic inference profile) via env or Secrets Manager.
+    bedrockModelId:  process.env.BEDROCK_MODEL_ID ?? 'us.amazon.nova-lite-v1:0',
     promptMode:      (process.env.PROMPT_MODE ?? 'ai') as PromptMode,
     promptsTable:    process.env.PROMPTS_TABLE ?? 'fire-hack-prompts',
     secretId:        process.env.SECRET_ID ?? null,

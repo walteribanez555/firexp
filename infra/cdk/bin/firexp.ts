@@ -34,13 +34,11 @@ const contentStack = new FirexpContentStack(app, "FirexpContentStack", {
 // Bedrock IAM policy + prompt-cache DynamoDB + prompt-generator Lambda + HTTP API.
 // Optional Secrets Manager placeholder (set -c createSecret=true to create it).
 //
-// NOTE: the content-api recap endpoint (apps/content-api/src/modules/sessions)
-// also calls Bedrock (ConverseCommand). The Bedrock managed policy exported from
-// FirexpAiStack can be attached to the content-api Lambda's role after deploy:
-//   aws iam attach-role-policy \
-//     --role-name <content-api-role> \
-//     --policy-arn <firexp-dev-bedrock-policy-arn>
-// Or use the BedrockPolicyArn CfnOutput to pass it to the content-api stack.
+// The content-api recap endpoint + Nova Canvas cover generation also call Bedrock.
+// That Lambda now gets its Bedrock InvokeModel grant IN CODE inside
+// FirexpContentStack (see the BedrockInvokeContentApi PolicyStatement), so no
+// manual `attach-role-policy` step is required after deploy. FirexpAiStack still
+// exports its own managed policy (bedrockPolicy) for any additional roles.
 new FirexpAiStack(app, "FirexpAiStack", {
   env: cdkEnv,
   appEnv: env,

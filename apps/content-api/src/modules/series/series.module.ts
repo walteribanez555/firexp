@@ -5,6 +5,7 @@ import type { AppEnv } from '../../app.types';
 import type { ISeriesRepository } from './series.repository';
 import { SeriesMemoryRepository } from './series.memory.repository';
 import { SeriesDynamoRepository } from './series.dynamo.repository';
+import { generateCover } from '../covers/covers.service';
 
 const logger = createLogger('SeriesModule');
 
@@ -80,6 +81,53 @@ seriesRouter.put('/:id', async (c) => {
     const item = await getSeriesRepo().update(id, body);
     if (!item) throw new NotFoundException('Series not found');
     return c.json({ data: item });
+  } catch (err) {
+    return handleException(err, c);
+  }
+});
+
+// POST /api/v1/series/:id/cover
+// Body (optional): { prompt?: string }
+// Generates cover art with Amazon Nova Canvas, uploads it to the content bucket,
+// updates the series thumbnailUrl to the CDN URL, and returns it.
+seriesRouter.post('/:id/cover', async (c) => {
+  try {
+    const id = c.req.param('id');
+
+    const series = await getSeriesRepo().findById(id);
+    if (!series) throw new NotFoundException('Series not found');
+
+    let prompt: string | undefined;
+    try {
+      const body = await c.req.json<{ prompt?: string }>();
+      prompt = body?.prompt;
+    } catch {
+      // No/invalid JSON body — prompt is optional.
+    }
+
+    const cover = await generateCover({
+      id,
+      prompt,
+      title:       series.title,
+      description: series.description,
+      kind:        'covers',
+    });
+
+    // Persist the new thumbnail only when a real image was produced+uploaded.
+    let thumbnailUrl = series.thumbnailUrl;
+    if (cover.uploaded) {
+      const updated = await getSeriesRepo().update(id, { thumbnailUrl: cover.url });
+      thumbnailUrl = updated?.thumbnailUrl ?? cover.url;
+    }
+
+    return c.json({
+      data: {
+        thumbnailUrl,
+        coverUrl:  cover.url,
+        generated: cover.generated,
+        uploaded:  cover.uploaded,
+      },
+    });
   } catch (err) {
     return handleException(err, c);
   }

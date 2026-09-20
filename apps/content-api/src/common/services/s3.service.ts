@@ -152,6 +152,42 @@ export async function getPresignedUploadUrl(
   return url;
 }
 
+// ─── Direct object upload (server-side PUT) ───────────────────────────────────
+
+/**
+ * Upload a buffer straight to S3 from the Lambda (no presign round-trip).
+ * Used for AI-generated cover art (Nova Canvas PNG bytes).
+ *
+ * Returns the public/CDN URL for the uploaded key. When no bucket is configured
+ * (offline/dev), it skips the upload and returns a stub URL so the flow still works.
+ */
+export async function putObject(opts: {
+  key:         string;
+  body:        Buffer | Uint8Array;
+  contentType: string;
+}): Promise<{ publicUrl: string; uploaded: boolean }> {
+  const { key, body, contentType } = opts;
+  const bucket = config.getValue('contentBucket');
+
+  if (!bucket) {
+    logger.warn('CONTENT_BUCKET not set — skipping putObject (stub mode)', { key });
+    return { publicUrl: buildPublicUrl(key), uploaded: false };
+  }
+
+  const client = makeS3Client();
+  await client.send(
+    new PutObjectCommand({
+      Bucket:      bucket,
+      Key:         key,
+      Body:        body,
+      ContentType: contentType,
+    }),
+  );
+
+  logger.debug('Object uploaded', { key, contentType, bytes: body.length });
+  return { publicUrl: buildPublicUrl(key), uploaded: true };
+}
+
 // ─── Multipart upload ─────────────────────────────────────────────────────────
 
 /**

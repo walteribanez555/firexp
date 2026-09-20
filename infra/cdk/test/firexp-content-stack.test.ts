@@ -28,6 +28,34 @@ describe("FirexpContentStack synthesis", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Bedrock — content-api InvokeModel grant (recap + Nova Canvas covers)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("Bedrock IAM — content-api grant", () => {
+  const template = buildStack("dev");
+
+  it("grants bedrock:InvokeModel to the content-api role in code", () => {
+    const policies = template.findResources("AWS::IAM::Policy");
+    const doc = JSON.stringify(Object.values(policies));
+    expect(doc).toContain("bedrock:InvokeModel");
+    // Nova Lite (recap) + Nova Canvas (cover art) must both be covered.
+    expect(doc).toContain("us.amazon.nova-lite-v1:0");
+    expect(doc).toContain("us.amazon.nova-canvas-v1:0");
+  });
+
+  it("injects BEDROCK_MODEL_ID (Nova Lite default) into the content-api Lambda", () => {
+    template.hasResourceProperties("AWS::Lambda::Function", {
+      FunctionName: "firexp-dev-content-api",
+      Environment: {
+        Variables: Match.objectLike({
+          BEDROCK_MODEL_ID: "us.amazon.nova-lite-v1:0",
+        }),
+      },
+    });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // DynamoDB — series table
 // ─────────────────────────────────────────────────────────────────────────────
 

@@ -84,6 +84,17 @@ describe("Bedrock IAM — managed policy", () => {
     expect(hasFoundationModelGrant).toBe(true);
   });
 
+  it("includes Amazon Nova Lite + Nova Canvas in the invoke grants", () => {
+    const policies = template.findResources("AWS::IAM::ManagedPolicy");
+    const doc = JSON.stringify(Object.values(policies));
+    // Inference-profile + foundation-model forms for Nova Lite (text/recap).
+    expect(doc).toContain("us.amazon.nova-lite-v1:0");
+    expect(doc).toContain("foundation-model/amazon.nova-lite-v1:0");
+    // Nova Canvas (image / cover art).
+    expect(doc).toContain("us.amazon.nova-canvas-v1:0");
+    expect(doc).toContain("foundation-model/amazon.nova-canvas-v1:0");
+  });
+
   it("allows Bedrock discovery actions on * resources", () => {
     const policies = template.findResources("AWS::IAM::ManagedPolicy");
     const hasDiscovery = Object.values(policies).some((r: any) => {
@@ -170,7 +181,7 @@ describe("Lambda — prompt-generator", () => {
       FunctionName: "firexp-dev-prompt-generator",
       Environment: {
         Variables: Match.objectLike({
-          BEDROCK_MODEL_ID: "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+          BEDROCK_MODEL_ID: "us.amazon.nova-lite-v1:0",
           AWS_REGION_NAME: "us-east-1",
           PROMPT_MODE: "ai",
           CACHE_TTL_SECONDS: "3600",

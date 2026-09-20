@@ -6,6 +6,7 @@ import {
   createSeries,
   updateSeries,
   deleteSeries,
+  generateSeriesCover,
   fetchEpisode,
   createEpisode,
   updateEpisode,
@@ -67,6 +68,23 @@ export function useDeleteSeries() {
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: SERIES_KEY });
       toast.success('Series deleted');
+    },
+  });
+}
+
+export function useGenerateSeriesCover() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, prompt }: { id: string; prompt?: string }) =>
+      generateSeriesCover(id, prompt),
+    onSuccess: (result, { id }) => {
+      void qc.invalidateQueries({ queryKey: SERIES_KEY });
+      void qc.invalidateQueries({ queryKey: seriesDetailKey(id) });
+      toast.success(
+        result.generated
+          ? 'Cover generated with Amazon Nova'
+          : 'Nova unavailable — cover not generated',
+      );
     },
   });
 }

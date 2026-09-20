@@ -44,7 +44,8 @@ async function generateRecap(roomCode: string, decisions: { decisionId: string; 
       `Write exactly 3 sentences summarizing the path taken, in a dramatic narrative style.`;
 
     const res = await client.send(new ConverseCommand({
-      modelId: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      // Amazon Nova Lite by default (Converse API); override via BEDROCK_MODEL_ID.
+      modelId: config.getValue('bedrockModelId'),
       messages: [{ role: 'user', content: [{ text: prompt }] }],
       inferenceConfig: { maxTokens: 200, temperature: 0.7 },
     }));

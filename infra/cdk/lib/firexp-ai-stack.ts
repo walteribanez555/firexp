@@ -20,9 +20,23 @@ const REPO_ROOT = path.join(__dirname, "..", "..", "..");
 // Without the console opt-in, Bedrock returns AccessDeniedException at runtime
 // even when the IAM policy is correct.
 const BEDROCK_MODEL_IDS = [
-  "us.anthropic.claude-haiku-4-5-20251001-v1:0", // fast / low-cost (default)
-  "us.anthropic.claude-sonnet-4-6",               // higher quality
+  "us.amazon.nova-lite-v1:0",                     // Amazon Nova Lite — text (default)
+  "us.anthropic.claude-haiku-4-5-20251001-v1:0", // Anthropic (optional override)
+  "us.anthropic.claude-sonnet-4-6",               // higher quality (optional override)
 ];
+
+// Amazon Nova Canvas — image generation (cover art). Invoked directly via
+// InvokeModel (no cross-region inference profile is required for image models,
+// but we grant both the inference-profile and foundation-model ARN forms so the
+// content-api can address either).
+const BEDROCK_IMAGE_MODEL_IDS = [
+  "us.amazon.nova-canvas-v1:0", // Amazon Nova Canvas — cover-art generation
+];
+
+// The single default model id passed to the Lambdas (recap + prompt-generator).
+// Nova Lite supports the Bedrock Converse API, so it is a drop-in default;
+// override with -c bedrockModelId=<id> or the BEDROCK_MODEL_ID env var.
+const DEFAULT_BEDROCK_MODEL_ID = BEDROCK_MODEL_IDS[0];
 
 export interface FirexpAiStackProps extends cdk.StackProps {
   /** Deployment stage: "dev" | "prod" (or any custom name). */
@@ -55,6 +69,13 @@ export interface FirexpAiStackProps extends cdk.StackProps {
  *   npx cdk deploy FirexpAiStack -c environment=prod
  */
 export class FirexpAiStack extends cdk.Stack {
+  /**
+   * Bedrock invoke managed policy — exported so other stacks (e.g. the
+   * content-api recap + Nova Canvas cover generation) can attach the same
+   * least-privilege grant to their Lambda roles without a manual post-deploy step.
+   */
+  public readonly bedrockPolicy: iam.ManagedPolicy;
+
   constructor(scope: Construct, id: string, props: FirexpAiStackProps) {
     super(scope, id, props);
 
@@ -95,13 +116,19 @@ export class FirexpAiStack extends cdk.Stack {
     // must be allowed.
     // ─────────────────────────────────────────────────────────────────────────
 
+    // Text models (Converse) + image models (Nova Canvas) share the same IAM
+    // shape — both need InvokeModel on the inference-profile and foundation-model
+    // ARN forms. Combine them so the managed policy covers Nova Lite, the
+    // Anthropic overrides, and Nova Canvas cover generation.
+    const allModelIds = [...BEDROCK_MODEL_IDS, ...BEDROCK_IMAGE_MODEL_IDS];
+
     // Build inference-profile ARNs (account-scoped, region us-east-1).
-    const inferenceProfileArns = BEDROCK_MODEL_IDS.map(
+    const inferenceProfileArns = allModelIds.map(
       (mid) => `arn:aws:bedrock:${region}:${account}:inference-profile/${mid}`
     );
 
     // Build foundation-model ARNs (global namespace — no account segment).
-    const foundationModelArns = BEDROCK_MODEL_IDS.map((mid) => {
+    const foundationModelArns = allModelIds.map((mid) => {
       // Strip "us." prefix to get the underlying foundation-model ID.
       const fmId = mid.replace(/^us\./, "");
       return `arn:aws:bedrock:${region}::foundation-model/${fmId}`;
@@ -145,6 +172,9 @@ export class FirexpAiStack extends cdk.Stack {
         }),
       ],
     });
+
+    // Expose for cross-stack attachment (content-api recap + Nova Canvas covers).
+    this.bedrockPolicy = bedrockPolicy;
 
     // ─────────────────────────────────────────────────────────────────────────
     // 2. DynamoDB — prompt-cache table
@@ -240,8 +270,11 @@ export class FirexpAiStack extends cdk.Stack {
 
           environment: {
             NODE_ENV: isProd ? "production" : "development",
-            // Primary Bedrock model — fast / low-cost (override with -c or env)
-            BEDROCK_MODEL_ID: BEDROCK_MODEL_IDS[0],
+            // Primary Bedrock model — Amazon Nova Lite by default (Converse API).
+            // Override with -c bedrockModelId=<id> or by editing the env post-deploy.
+            BEDROCK_MODEL_ID:
+              (this.node.tryGetContext("bedrockModelId") as string | undefined) ??
+              DEFAULT_BEDROCK_MODEL_ID,
             // DynamoDB prompt-cache table
             PROMPTS_TABLE: promptsTable.tableName,
             // AWS_REGION is injected automatically by the Lambda runtime (reserved);
