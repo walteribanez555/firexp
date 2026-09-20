@@ -4,6 +4,7 @@ import * as cdk from "aws-cdk-lib";
 import { FirexpContentStack } from "../lib/firexp-content-stack";
 import { FirexpAiStack } from "../lib/firexp-ai-stack";
 import { FirexpRelayStack } from "../lib/firexp-relay-stack";
+import { FirexpDashboardStack } from "../lib/firexp-dashboard-stack";
 
 const app = new cdk.App();
 
@@ -59,3 +60,16 @@ const relayStack = new FirexpRelayStack(app, "FirexpRelayStack", {
 });
 // The relay imports the content-api URL export, so content must deploy first.
 relayStack.addDependency(contentStack);
+
+// ── Dashboard stack (React CMS on S3 + CloudFront) ──────────────────────────────
+// Gated behind `-c dashboard=true` because it uploads apps/content-dashboard/dist,
+// which must be built (with the deployed content-api URL) before deploying:
+//   VITE_CONTENT_API_URL=<content-api>/api/v1 npm run build -w content-dashboard
+//   cdk deploy FirexpDashboardStack -c dashboard=true
+if ((app.node.tryGetContext("dashboard") ?? "false") === "true") {
+  new FirexpDashboardStack(app, "FirexpDashboardStack", {
+    env: cdkEnv,
+    appEnv: env,
+    description: `Firexp dashboard (CMS) static hosting — ${env}`,
+  });
+}

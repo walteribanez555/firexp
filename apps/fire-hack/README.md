@@ -1,139 +1,108 @@
 # fire-hack — Interactive Branching Narrative for Fire TV
 
-A Fire TV app where the story branches based on decisions the viewer makes on their phone. No gestures or computer vision required — the phone is the smart remote.
+A Fire TV app where a story branches on decisions the **room** makes from their
+phones. No gestures or computer vision — each phone is a second-screen voting
+controller, and the TV never shows any decision UI (all interaction lives on the
+phones; the inverse of X-Ray).
 
 ## How it works
 
-1. A QR code appears on the TV screen
-2. The viewer scans it with their phone and answers a short questionnaire
-3. The cloud processes the answers and selects the opening chapter
-4. The story plays on Fire TV (single concatenated MP4, navigation via seek)
-5. At decision points, an overlay appears and the viewer chooses on their phone
-6. The app seeks to the next chapter based on the decision; a timeout falls back to the default branch
+1. The TV shows a catalog; the viewer picks an episode.
+2. A **QR code** appears; each viewer opens the phone web page (no install) and
+   answers a short questionnaire that sets the room's numeric **flags**.
+3. On `episode_start`, the TV begins playing **continuous video**.
+4. Decisions appear **only on the phones**. Viewers vote; the tally is live and
+   votes are revocable until the timer closes.
+5. The TV silently cuts to the branch the room chose — **flags select the clip** —
+   and preloads the next one. Different rooms reach different endings.
 
-## Architecture — MVVM
+The TV is autonomous: it drives the timeline, opens/closes decision windows,
+tallies votes and picks variants. The relay is a dumb forwarder; there is no
+decision overlay rendered on the TV.
+
+## Architecture
 
 ```
 com.example.fire_hack/
-├── data/
-│   ├── model/          ← pure data classes, no logic
-│   │   ├── StoryGraph.kt       — full story deserialized from assets
-│   │   ├── Chapter.kt          — node: videoIn, videoOut, decisionAt, options, defaultNextId
-│   │   ├── Decision.kt         — option: id, label, nextChapterId
-│   │   ├── SessionEvent.kt     — sealed: SessionConnected | QuestionnaireComplete | DecisionMade | ...
-│   │   └── AppState.kt         — sealed: Connecting | WaitingQuestionnaire | Playing | DecisionWindow | Ended
-│   ├── source/         ← single-responsibility I/O adapters
-│   │   ├── StoryAssetSource.kt     — reads story_graph.json from assets/
-│   │   ├── SessionWebSocketSource.kt — OkHttp WebSocket → Flow<SessionEvent>
-│   │   └── PlayerSource.kt         — ExoPlayer wrapper: play, pause, seekTo
-│   └── repository/     ← abstracts sources; ViewModels only touch repositories
-│       ├── StoryRepository.kt
-│       ├── SessionRepository.kt
-│       └── PlayerRepository.kt
+├── Config.kt                     — RELAY_CLOUD host (RELAY_HOST/PHONE_HOST alias it)
+├── MainActivity.kt
 ├── domain/
-│   └── usecase/        ← business logic, isolated from Android
-│       ├── CreateSessionUseCase.kt       — generates sessionId + QR URL
-│       ├── WatchEventsUseCase.kt         — Flow<SessionEvent> filtered for the ViewModel
-│       └── ResolveNextChapterUseCase.kt  — (decision, currentChapter) → next Chapter
-├── ui/
-│   ├── viewmodel/
-│   │   ├── ConnectionViewModel.kt  — creates session, exposes QR, detects phone connection
-│   │   ├── WaitingViewModel.kt     — waits for QuestionnaireComplete event
-│   │   └── PlayerViewModel.kt      — orchestrates ExoPlayer + WebSocket events + chapter resolution
-│   ├── screen/
-│   │   ├── ConnectionScreen.kt     — QR code + session code display
-│   │   ├── WaitingScreen.kt        — spinner while user fills questionnaire on phone
-│   │   ├── PlayerScreen.kt         — fullscreen ExoPlayer + conditional DecisionOverlay
-│   │   └── EndingScreen.kt         — final screen with restart option
-│   ├── component/
-│   │   ├── QrCodeView.kt           — generates and renders QR from URL (ZXing)
-│   │   ├── DecisionOverlay.kt      — semi-transparent overlay with countdown progress bar
-│   │   └── ChapterTransition.kt    — black fade during seek between chapters
-│   └── Navigation.kt               — NavHost with typed routes
-└── MainActivity.kt
+│   └── StoryEngine.kt            — the "director": delay-based timeline, opens
+│                                   decision windows, tallies votes, applies flags,
+│                                   selects the next variant (first-match `when`)
+├── data/
+│   ├── model/                    — Series, EpisodeSummary, EpisodeGraph, StoryChapter,
+│   │                               StoryVariant, ChapterDecision, Route, …
+│   └── source/
+│       ├── PlayerSource.kt       — @UnstableApi ExoPlayer wrapper: media cache,
+│       │                           preload (CacheWriter), decoder fallback (no black screen)
+│       └── SessionWebSocketSource.kt — OkHttp WebSocket → Flow of relay messages
+└── ui/
+    ├── Navigation.kt             — state-driven screens: Splash → Catalog → Lobby
+    │                               → Playing (video only) → Ending
+    ├── screen/                   — SplashScreen, SeriesCatalogScreen, LobbyScreen, EndingScreen
+    ├── component/                — FirexpLogo, QrCodeView (ZXing), NetworkImage (OkHttp),
+    │                               DecisionOverlay, ChapterTransition
+    └── theme/                    — Color.kt (ember-on-near-black design system)
 ```
 
-## Navigation flow
+## Content model
 
-```
-ConnectionScreen  →  WaitingScreen  →  PlayerScreen  →  EndingScreen
-   (QR + code)      (questionnaire)    (video + decisions)   (final)
-```
+Each **chapter** has its own **variant clips** (separate MP4s, not one concatenated
+file). A variant carries a `when` condition over the room's flags (e.g.
+`"confident >= 1"`, last is `"default"`); the StoryEngine picks the first match.
+Episodes/series come from the **content-api** (via the relay's catalog proxy);
+media URLs are resolved against `Config.RELAY_HOST` (`/images/...`) or the CDN.
 
-## Story graph
+## Networking (`Config.kt`)
 
-The full video is a single MP4 with all branches concatenated. The app navigates between chapters via `ExoPlayer.seekTo(positionMs)` — no multiple files, no multiple decoders.
+`RELAY_CLOUD` is the single backend host; `RELAY_HOST` and `PHONE_HOST` alias it.
+- **Deployed relay** (ECS Fargate): `http://<fargate-ip>:3001` — resolve the
+  current (ephemeral) IP with `bash infra/scripts/relay-ip.sh`.
+- **Local dev**: `http://10.0.2.2:3001` on the Android TV emulator, or the host
+  LAN IP on a physical device (TV + phones on the same WiFi).
 
-`assets/story_graph.json` defines every chapter:
+## Relay protocol (WebSocket)
 
-```json
-{
-  "startChapterId": "intro",
-  "chapters": {
-    "intro": {
-      "id": "intro",
-      "videoIn": 0,
-      "videoOut": 30000,
-      "decisionAt": 25000,
-      "decisionWindow": 5000,
-      "options": [
-        { "id": "path_a", "label": "Path A", "nextChapterId": "branch_a" }
-      ],
-      "defaultNextId": "branch_a"
-    }
-  }
-}
-```
+The TV connects with `?room=<CODE>&role=tv`; phones connect with `?room=<CODE>`.
+JSON messages (see `apps/relay` and `packages/types`):
 
-| Field | Description |
-|---|---|
-| `videoIn` / `videoOut` | Start and end of the chapter in milliseconds within the concatenated MP4 |
-| `decisionAt` | Milliseconds from `videoIn` when the decision overlay appears |
-| `decisionWindow` | How long (ms) the user has to decide before the default branch is taken |
-| `defaultNextId` | Chapter to jump to if no decision arrives in time |
-
-## Video pipeline
-
-```bash
-# Encode all clips with a keyframe every 0.5s for fast seeking
-ffmpeg -i clip1.mp4 -g 15 -r 30 clip1_enc.mp4
-ffmpeg -i clip2.mp4 -g 15 -r 30 clip2_enc.mp4
-
-# Concatenate into one file
-ffmpeg -f concat -safe 0 -i filelist.txt -c copy story.mp4
-```
+| Direction | `type` | Meaning |
+|---|---|---|
+| relay → all | `episode_start` | questionnaire done → `{ chapterId, flags }` |
+| TV → relay → phones | `window_open` / `window_closed` | open/close a decision window |
+| phone → relay → TV | `vote` | a viewer chose an option (revocable) |
+| relay → room | `tally` | live vote counts |
+| TV → relay → phones | `watching` | currently playing chapter/variant |
+| relay → phone | `assigned` / `window_open_sync` | join + late-join catch-up |
+| TV → relay | `log_entry` / `story_end` | persisted to DynamoDB via content-api |
+| both | `ping` / `pong` | relay is the reference clock |
 
 ## Dependencies
 
 | Library | Purpose |
 |---|---|
-| `androidx.media3:media3-exoplayer` | Video playback + seek |
-| `androidx.media3:media3-ui` | `PlayerView` for Compose via `AndroidView` |
-| `com.squareup.okhttp3:okhttp` | WebSocket client for relay events |
-| `org.jetbrains.kotlinx:kotlinx-serialization-json` | Deserialize `story_graph.json` and WebSocket messages |
-| `androidx.navigation:navigation-compose` | Screen navigation |
-| `com.google.zxing:core` | QR code generation |
-| `androidx.tv:tv-material` | Compose components optimized for TV |
-
-## Relay protocol (WebSocket)
-
-The relay server sends JSON messages to the TV app:
-
-```json
-{ "type": "SESSION_CONNECTED", "payload": { "sessionId": "ABC12345" } }
-{ "type": "QUESTIONNAIRE_COMPLETE", "payload": { "initialChapterId": "intro" } }
-{ "type": "DECISION_MADE", "payload": { "decisionId": "path_a" } }
-```
-
-## Hackathon tracks
-
-- **Primary:** Fire TV (Fire OS, Android/Kotlin, Jetpack Compose)
-- **Categories:** AI-enhanced viewing · Multi-modal UX · Family entertainment
-- **Mini challenge:** AWS Builder (Bedrock for questionnaire processing) · Open Source
+| `androidx.media3:media3-exoplayer` (+`-ui`) | playback, media cache, preload, decoder fallback |
+| `com.squareup.okhttp3:okhttp` | WebSocket client + image loading |
+| `org.jetbrains.kotlinx:kotlinx-serialization-json` | relay message / model (de)serialization |
+| `com.google.zxing:core` | QR generation |
+| `androidx.tv:tv-material` (`androidx.tv.material3`) | TV-optimized Compose (D-pad focus) |
 
 ## Build & run
 
-1. Open `apps/fire-hack` in Android Studio
-2. Connect a Fire TV device or launch a Fire TV AVD
-3. Run the app — a QR code will appear on screen
-4. Open the phone web app, scan the code, and answer the questionnaire
+1. Open `apps/fire-hack` in Android Studio.
+2. Point `Config.kt`'s `RELAY_CLOUD` at your relay (deployed IP via
+   `relay-ip.sh`, or `http://10.0.2.2:3001` for the emulator against a local relay).
+3. Run on a Fire TV device or a Television AVD → the catalog appears; pick an
+   episode to show the QR and start a room.
+
+> Videos: the deployed relay serves the phone page + images but **not** `/videos`
+> (branch clips are hosted on S3/CloudFront and uploaded via the CMS). With only
+> the seed data, catalog + decisions work but branch playback falls back until
+> clips are uploaded.
+
+## Hackathon
+
+- **Track:** Fire TV (Fire OS, Kotlin, Jetpack Compose / Compose for TV).
+- **Categories:** multi-modal UX · family entertainment · AI-enhanced viewing.
+- **Mini challenges:** AWS Builder (Bedrock recaps/prompts) · Open Source.

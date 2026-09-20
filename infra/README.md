@@ -2,8 +2,17 @@
 
 All AWS infrastructure is managed with **AWS CDK** in `infra/cdk`.
 
-> **IMPORTANT:** Review `cdk diff` before any deploy.  
-> Nothing here is auto-applied. No remote backend is required — CDK uses CloudFormation.
+> **Deploy is autonomous** via the `Deploy (CDK)` GitHub Action (`cdk deploy --all`
+> + seed + Bedrock access + dashboard hosting). For manual deploys, review
+> `cdk diff` first. See [`docs/DEPLOYMENT.md`](../docs/DEPLOYMENT.md).
+>
+> **Dev vs prod / cost:** the `dev` deployment is deliberately budget‑minimising —
+> relay = single Fargate task, **no ALB / no NAT**, `ws://`, `CORS: *` (≈ $9/mo).
+> These are intentional development trade‑offs; harden TLS/CORS/IAM and use the
+> relay `prod` mode (ALB + NAT) before a public launch. Full rationale in
+> [`infra/cdk/README.md`](cdk/README.md).
+>
+> Helper scripts: `infra/scripts/relay-ip.sh`, `infra/scripts/bedrock-access.sh`.
 
 ---
 

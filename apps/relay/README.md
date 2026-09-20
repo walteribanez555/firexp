@@ -36,7 +36,7 @@ relay/
 │       └── rooms/
 │           ├── rooms.types.ts        # RoomClient, RoomState, RoomStats
 │           ├── rooms.service.ts      # join / leave / broadcast / pushLog / whatIf / persist
-│           └── rooms.module.ts       # Rutas: GET /rooms, GET /rooms/:id, GET /rooms/:id/whatif, POST /rooms
+│           └── rooms.module.ts       # Rutas: GET /rooms, GET /rooms/:code, POST /rooms, POST /rooms/:code/{whatif,questionnaire}
 ├── public/                           # Build de apps/phone servido en /phone/*
 ├── rooms/                            # Sesiones persistidas como JSON (generado en runtime)
 ├── esbuild.config.js
@@ -91,9 +91,10 @@ npm start
 | `GET` | `/api/v1/health` | Health check |
 | `GET` | `/api/v1/rooms` | Stats de todas las salas (activas + cerradas en disco) |
 | `GET` | `/api/v1/rooms/:code` | Stats + log completo de una sala |
-| `GET` | `/api/v1/rooms/:code/whatif?at=cap2&option=0` | Proyección de camino alternativo desde un capítulo |
+| `POST` | `/api/v1/rooms/:code/whatif` | Proyección de camino alternativo (story graph en el body) |
+| `POST` | `/api/v1/rooms/:code/questionnaire` | Recibe respuestas del cuestionario → aplica flags → broadcast `episode_start` |
 | `POST` | `/api/v1/rooms` | Crea sala nueva; acepta `{ inherit: "K7P2" }` para continuar banderas de otra sesión |
-| `GET` | `/phone/*` | Sirve el build estático de `apps/phone` |
+| `GET` | `/health` · `/phone/*` · `/tv-sim/*` · `/videos/*` · `/images/*` | Health, web del teléfono, simulador de TV y media estática |
 
 ### POST /api/v1/rooms — body
 
@@ -105,7 +106,7 @@ npm start
 }
 ```
 
-### GET /api/v1/rooms/:code/whatif — body
+### POST /api/v1/rooms/:code/whatif — body
 
 El story graph debe enviarse en el body para que el relay pueda proyectar:
 
@@ -119,38 +120,33 @@ Devuelve `{ data: { projectedPath: ["Cap 2 — sigilo", "Cap 3 — final_b"] } }
 
 ## Protocolo WebSocket
 
-Conecta con `ws://localhost:3001?room=K7P2`. Reemplaza `K7P2` con el código de sala de 4 caracteres que muestra la TV.
+Conecta con `ws://localhost:3001?room=K7P2` (teléfono) o `?room=K7P2&role=tv`
+(la TV; no cuenta como espectador). El relay valida cada mensaje con zod y es un
+reenviador "tonto"; la lógica de decisión vive en la TV (StoryEngine).
 
-### Al conectar
+### Al conectar (teléfono)
 
-El relay envía inmediatamente la asignación:
+El relay asigna slot/color y hace catch‑up de entrada tardía:
 
 ```json
 { "type": "assigned", "viewer": 1, "color": "#e74c3c" }
 ```
 
-### Enviar un gesto
+### Mensajes (protocolo de votos)
 
-```json
-{
-  "type":       "gesture",
-  "room":       "K7P2",
-  "viewer":     1,
-  "action":     "hands_up",
-  "confidence": 0.91,
-  "ts":         1757692800000
-}
-```
+| Dirección | `type` | Descripción |
+|---|---|---|
+| relay → sala | `episode_start` | cuestionario listo → `{ chapterId, flags }` |
+| TV → relay → teléfonos | `window_open` / `window_closed` | abre/cierra ventana de decisión |
+| teléfono → relay → TV | `vote` | un espectador eligió una opción (revocable) |
+| relay → sala | `tally` | conteo de votos en vivo |
+| TV → relay → teléfonos | `watching` | capítulo/variante en reproducción |
+| relay → teléfono | `window_open_sync` | catch‑up de ventana abierta (entrada tardía) |
+| TV → relay | `log_entry` / `story_end` | persistido en DynamoDB vía content‑api |
+| ambos | `ping` / `pong` | el relay es el reloj de referencia |
 
-El relay reenvía esto a todos los demás clientes de la misma sala (incluida la app de Fire TV).
-
-### Mensajes `join`
-
-```json
-{ "type": "join", "room": "K7P2" }
-```
-
-Manejados al momento de la conexión vía `?room=`. Los `join` duplicados se ignoran.
+Los esquemas viven en `@fire-stick/types` (`schemas.ts`). El `join` se maneja por
+la query `?room=`; los duplicados se ignoran.
 
 ---
 
@@ -179,14 +175,9 @@ El relay también carga sesiones desde disco en `allStats()` y `whatIf()`, por l
 
 ---
 
-## Nota sobre HTTPS
+## Nota sobre HTTPS / `wss://`
 
-El cliente del teléfono usa `getUserMedia` (cámara) y `DeviceMotion` (acelerómetro), que los navegadores bloquean sin HTTPS, excepto en `localhost`. Para pruebas en la red local con un dispositivo real, usa `mkcert`:
-
-```bash
-brew install mkcert
-mkcert -install
-mkcert localhost 192.168.1.x
-```
-
-Conecta los `.pem` resultantes en el `createServer` de `main.ts`.
+El teléfono es solo votos + cuestionario (no usa cámara ni acelerómetro), así que
+sirve por HTTP con `ws://` en dev (emulador / LAN). Para un despliegue público se
+necesita **TLS** (`wss://` vía ACM + dominio, o un ALB con certificado); ver la
+nota de "Development posture & cost trade-offs" en `infra/cdk/README.md`.

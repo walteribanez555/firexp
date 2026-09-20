@@ -40,7 +40,7 @@ _Devpost requires feedback on **every** tool/API/SDK used. One entry each: what 
 - **Again:** yes.
 
 ## AWS CDK
-- **Used for:** all infrastructure — DynamoDB (series/episodes/sessions/prompt-cache), S3, CloudFront (OAC), Bedrock IAM managed policy, Lambda (NodejsFunction) for content-api and prompt-generator, HTTP API v2. Two stacks: `FirexpContentStack` and `FirexpAiStack`.
+- **Used for:** all infrastructure — DynamoDB (series/episodes/sessions/prompt-cache), S3, CloudFront (OAC), Bedrock IAM managed policy, Lambda (NodejsFunction) for content-api and prompt-generator, HTTP API v2, and **ECS Fargate** (WebSocket relay, image via `ContainerImage.fromAsset`). Four stacks: `FirexpContentStack`, `FirexpAiStack`, `FirexpRelayStack`, `FirexpDashboardStack` (CMS on S3+CloudFront). The whole platform deploys autonomously from one GitHub Action (`cdk deploy --all` + seed + Bedrock access).
 - **Worked:** `grant*` helpers and `S3BucketOrigin.withOriginAccessControl()` are excellent; `cdk synth` in CI catches drift; a single IaC tool across the whole project eliminates toolchain friction.
 - **Needs work:** NodejsFunction bundling assumptions in a monorepo (projectRoot/depsLockFilePath) took trial and error.
 - **Again:** yes.

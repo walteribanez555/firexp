@@ -96,6 +96,19 @@ jobs:
           SESSIONS_TABLE=firexp-$ENV-sessions \
           npx ts-node -r tsconfig-paths/register scripts/dynamo-init.ts
 
+      # Build the CMS with the just-deployed content-api URL, then host it on
+      # S3+CloudFront (FirexpDashboardStack uploads dist + invalidates the CDN).
+      - name: Build & deploy dashboard (S3 + CloudFront)
+        env:
+          ENV: ${{ github.event.inputs.environment }}
+        run: |
+          API=$(aws cloudformation describe-stacks --stack-name FirexpContentStack \
+            --query "Stacks[0].Outputs[?OutputKey=='ContentApiUrl'].OutputValue" --output text)
+          echo "Building dashboard against $API/api/v1"
+          VITE_CONTENT_API_URL="$API/api/v1" npm run build -w content-dashboard
+          cd infra/cdk
+          npx cdk deploy FirexpDashboardStack -c environment=$ENV -c dashboard=true --require-approval never
+
       - name: Relay endpoint (dev)
         if: ${{ github.event.inputs.environment == 'dev' }}
         run: bash infra/scripts/relay-ip.sh "firexp-dev-relay-cluster" "firexp-dev-relay" || true

@@ -136,13 +136,25 @@ decisión** — solo video continuo; toda la decisión vive en el teléfono ("to
 | Servicio | Tipo | Destino |
 |---|---|---|
 | content-api, prompt-generator | stateless (HTTP) | **Lambda** (CDK `NodejsFunction`) |
-| **relay** | **WebSocket / tiempo real** | **local ahora → Fargate (ECS) después** (Lambda no sirve WS persistente) |
+| **relay** | **WebSocket / tiempo real** | **ECS Fargate** (Lambda no sirve WS persistente) |
 | datos | — | **DynamoDB** |
 | video | — | **S3 privado + CloudFront (OAC)** |
-| phone / dashboard | web | estático (servido por el relay / hosting estático) |
+| phone | web | estático (servido por el relay) |
+| dashboard (CMS) | web | **S3 privado + CloudFront (OAC)** |
 
-Infra como código: **solo AWS CDK** (`infra/cdk`) — dos stacks: `FirexpContentStack`
-(content-api + DynamoDB + S3 + CloudFront) y `FirexpAiStack` (IAM Bedrock + prompt-generator + DynamoDB caché). **Nada se aplica automáticamente.**
+Infra como código: **solo AWS CDK** (`infra/cdk`) — **cuatro stacks**: `FirexpContentStack`,
+`FirexpAiStack`, `FirexpRelayStack` (relay en Fargate) y `FirexpDashboardStack`
+(CMS en S3 + CloudFront, con `-c dashboard=true`).
+
+**El despliegue es autónomo** — el Action `Deploy (CDK)` corre `cdk deploy --all`
+(construye la imagen del relay con `fromAsset`, cablea las URLs), siembra DynamoDB,
+habilita Bedrock y hostea el dashboard, sin pasos manuales. Ver [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+> **Dev vs prod / costo:** el setup desplegado es a propósito una postura de
+> **desarrollo y ahorro de presupuesto** — el relay corre como **una sola task
+> Fargate con IP pública, sin ALB ni NAT** (≈ $9/mes vs ≈ $57/mes), `ws://` plano
+> y `CORS: *`. Son trade‑offs deliberados de costo/dev; el modo `prod` del relay
+> añade ALB + NAT, y el endurecimiento de TLS/CORS debe aplicarse antes de un lanzamiento público.
 
 ---
 
@@ -178,7 +190,7 @@ DYNAMODB_ENDPOINT=http://localhost:8000 AWS_REGION=us-east-1 \
   SERIES_TABLE=firexp-dev-series EPISODES_TABLE=firexp-dev-episodes PORT=3003 node dist/main.js
 
 # 3. relay (tiempo real + sirve phone/videos)
-cd apps/relay && CONTENT_API_URL=http://localhost:3003/api/v1 PORT=3001 node dist/main.js
+cd apps/relay && CONTENT_API_URL=http://localhost:3003 PORT=3001 node dist/main.js  # base sin /api/v1
 
 # 4. dashboard (opcional)
 cd apps/content-dashboard && VITE_CONTENT_API_URL=http://localhost:3003/api/v1 npm run dev
@@ -187,8 +199,8 @@ cd apps/content-dashboard && VITE_CONTENT_API_URL=http://localhost:3003/api/v1 n
 ```
 
 **Config de red (`apps/fire-hack/.../Config.kt`):**
-- Emulador TV → `RELAY_HOST = http://10.0.2.2:3001` (alias del host).
-- Fire TV físico → `RELAY_HOST = RELAY_LAN` (IP LAN de la máquina del relay).
+- Relay desplegado → `RELAY_CLOUD = http://<fargate-ip>:3001` (`bash infra/scripts/relay-ip.sh`).
+- Dev local → `http://10.0.2.2:3001` (emulador) o la IP LAN de la máquina (dispositivo físico).
 - `PHONE_HOST` = IP LAN siempre (para el QR del teléfono físico).
 - TV y teléfono deben estar en la **misma WiFi**.
 

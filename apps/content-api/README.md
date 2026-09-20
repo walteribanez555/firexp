@@ -108,7 +108,8 @@ StoryVariant   { in, out, when, tag?, videoUrl? }
 | `DYNAMODB_ENDPOINT`     | *(unset)*             | Override DynamoDB endpoint (e.g. `http://localhost:8000` for DynamoDB Local). Also enables dynamo storage. |
 | `SERIES_TABLE`          | `firexp-dev-series`   | DynamoDB table for series                                                                        |
 | `EPISODES_TABLE`        | `firexp-dev-episodes` | DynamoDB table for episodes                                                                      |
-| `CONTENT_BUCKET`        | *(empty)*             | S3 bucket for video uploads; when unset, stub mode is active                                     |
+| `SESSIONS_TABLE`        | `firexp-dev-sessions` | DynamoDB table for sessions/vote aggregates (`/stats`, recap)                                    |
+| `CONTENT_BUCKET`        | *(empty)*             | S3 bucket for video uploads (`firexp-{env}-content`); when unset, stub mode is active            |
 | `CDN_BASE`              | *(empty)*             | CloudFront origin prefix for `publicUrl` (e.g. `https://cdn.example.com`)                        |
 | `PRESIGN_TTL`           | `300`                 | Presigned PUT URL expiry in seconds (single-part path)                                           |
 | `MULTIPART_PRESIGN_TTL` | `900`                 | Presigned UploadPart URL expiry in seconds (multipart path)                                      |
@@ -133,7 +134,7 @@ AWS_PROFILE=my-dev-profile
 # AWS_SECRET_ACCESS_KEY=...
 # AWS_SESSION_TOKEN=...   # if using STS / SSO short-lived creds
 
-CONTENT_BUCKET=firexp-dev-videos          # your S3 bucket name
+CONTENT_BUCKET=firexp-dev-content         # CDK-created bucket (firexp-{env}-content)
 CDN_BASE=https://dXXXXXXXXXX.cloudfront.net   # optional CloudFront distribution
 
 PRESIGN_TTL=300

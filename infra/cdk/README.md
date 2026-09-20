@@ -3,13 +3,33 @@
 AWS CDK (TypeScript) infrastructure for the Firexp platform. All AWS resources
 are managed here — there is no other IaC tool in use.
 
-Three stacks are synthesised together:
+Four stacks:
 
 | Stack | What it owns |
 |---|---|
 | **FirexpContentStack** | DynamoDB (series/episodes/sessions) + S3 + CloudFront (OAC) + content-api Lambda + HTTP API |
 | **FirexpAiStack** | Bedrock IAM managed policy + DynamoDB prompt-cache + prompt-generator Lambda + HTTP API + optional Secrets Manager |
-| **FirexpRelayStack** | ECS Fargate WebSocket relay (VPC + ECR + cluster + service). Topology differs by stage — see [Relay: DEV vs PROD](#relay-websocket--dev-vs-prod). |
+| **FirexpRelayStack** | ECS Fargate WebSocket relay (VPC + cluster + service; image via `ContainerImage.fromAsset`). Topology differs by stage — see [Relay: DEV vs PROD](#relay-websocket--dev-vs-prod). |
+| **FirexpDashboardStack** | CMS (React SPA) on private S3 + CloudFront (OAC). Gated by `-c dashboard=true` (uploads the built `apps/content-dashboard/dist`). |
+
+`FirexpContentStack`, `FirexpAiStack` and `FirexpRelayStack` deploy with
+`cdk deploy --all`; the dashboard is deployed after (its SPA bakes the content-api
+URL at build time). Helper scripts: `infra/scripts/relay-ip.sh` (resolve the dev
+relay's ephemeral public IP) and `infra/scripts/bedrock-access.sh` (ensure model access).
+
+> ### Development posture & cost trade-offs (read me)
+> The default (`dev`) deployment is intentionally optimised for **development and
+> a minimal budget**, not production hardening. Concretely:
+> - **Relay**: a single Fargate task with a **public IP, no ALB and no NAT**
+>   (≈ **$9/mo** vs ≈ **$57/mo** with ALB+NAT), plain **`ws://`** (no ACM/TLS),
+>   and an ephemeral IP. State is in-memory (single task).
+> - **CORS `*`** on the content-api / relay / S3 bucket, and Bedrock discovery on `*`.
+>
+> These are deliberate cost/dev choices, not oversights. The relay stack's `prod`
+> mode already adds ALB + NAT; TLS (`wss://` via ACM + a domain), CORS tightening,
+> a stable hostname (EventBridge→Route53) and least-privilege IAM should be applied
+> before a public launch. Turn the dev relay off when idle to reach ≈ $0 compute:
+> `aws ecs update-service --cluster firexp-dev-relay-cluster --service firexp-dev-relay --desired-count 0`.
 
 ---
 

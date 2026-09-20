@@ -145,13 +145,28 @@ the scenes").
 | Service | Type | Destination |
 |---|---|---|
 | content-api, prompt-generator | Stateless (HTTP) | **Lambda** (CDK `NodejsFunction`) |
-| **relay** | **WebSocket / real-time** | **local now → Fargate (ECS) later** (Lambda doesn't support persistent WS) |
+| **relay** | **WebSocket / real-time** | **ECS Fargate** (Lambda doesn't support persistent WS) |
 | data | — | **DynamoDB** |
 | video | — | **Private S3 + CloudFront (OAC)** |
-| phone / dashboard | web | Static (served by relay / static hosting) |
+| phone | web | Static (served by the relay) |
+| dashboard (CMS) | web | **Private S3 + CloudFront (OAC)** |
 
-Infrastructure as code: **AWS CDK only** (`infra/cdk`) — two stacks: `FirexpContentStack`
-(content-api + DynamoDB + S3 + CloudFront) and `FirexpAiStack` (Bedrock IAM + prompt-generator + prompt-cache DynamoDB). **Nothing is applied automatically.**
+Infrastructure as code: **AWS CDK only** (`infra/cdk`) — **four stacks**:
+`FirexpContentStack` (content-api + DynamoDB + S3 + CloudFront), `FirexpAiStack`
+(Bedrock IAM + prompt-generator + prompt-cache DynamoDB), `FirexpRelayStack` (ECS
+Fargate WebSocket relay) and `FirexpDashboardStack` (CMS on S3 + CloudFront, gated
+by `-c dashboard=true`).
+
+**Deploy is autonomous** — the `Deploy (CDK)` GitHub Action runs `cdk deploy --all`
+(builds the relay image via `fromAsset`, wires cross-stack URLs), seeds DynamoDB,
+enables Bedrock access and hosts the dashboard, with no manual steps. See
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+> **Dev vs prod / cost:** the deployed setup is intentionally a **development,
+> budget-minimising** posture — the relay runs as a single Fargate task with a
+> public IP and **no ALB and no NAT** (≈ $9/mo vs ≈ $57/mo), plain `ws://`, and
+> `CORS: *`. These are deliberate cost/dev trade-offs; the relay stack's `prod`
+> mode adds ALB + NAT and TLS/CORS hardening should be applied before a public launch.
 
 ---
 
@@ -168,7 +183,8 @@ apps/
 packages/
   types/             @fire-stick/types (shared contracts)
   story-graph/       @fire-stick/story-graph (graph logic)
-infra/cdk/           CDK: DynamoDB, S3, CloudFront, Lambda, HTTP API, Bedrock IAM
+infra/cdk/           CDK: 4 stacks (content, ai, relay, dashboard)
+infra/scripts/       relay-ip.sh (resolve dev relay IP) · bedrock-access.sh (model access)
 scripts/dev.sh       Single-command local dev launcher
 docker-compose.yml   DynamoDB Local (dev)
 ```
@@ -178,7 +194,7 @@ docker-compose.yml   DynamoDB Local (dev)
 ## 9. Run in 5 minutes
 
 ```bash
-# 0. Prerequisites: Node >= 18, Docker, Android Studio (for the TV app)
+# 0. Prerequisites: Node 24, Docker, Android Studio (for the TV app)
 npm install
 
 # 1. Start everything (DynamoDB Local + content-api + relay + dashboard)
@@ -186,11 +202,11 @@ npm run dev
 
 # 2. Install the Fire TV APK
 #    Open apps/fire-hack in Android Studio → Run on emulator or sideload to device.
-#    Config (apps/fire-hack/.../Config.kt):
-#      Emulator TV  → RELAY_HOST = http://10.0.2.2:3001
-#      Physical TV  → RELAY_HOST = <your machine LAN IP>:3001
-#      PHONE_HOST   = <your machine LAN IP> (always LAN for the QR)
-#    TV and phone must be on the same WiFi.
+#    Config (apps/fire-hack/.../Config.kt) sets a single RELAY_CLOUD host
+#    (RELAY_HOST and PHONE_HOST both alias it):
+#      Deployed relay → RELAY_CLOUD = http://<fargate-ip>:3001  (bash infra/scripts/relay-ip.sh)
+#      Local dev      → http://10.0.2.2:3001 (emulator) or your LAN IP (physical device)
+#    For local dev, TV and phone must be on the same WiFi.
 ```
 
 `npm run dev` does the following automatically:
@@ -201,7 +217,7 @@ npm run dev
 | `npm run dynamo:init` (content-api) | Creates tables + seeds sample data (skipped if already done) |
 | content-api on :3003 | DynamoDB-backed content source of truth |
 | relay on :3001 | WebSocket hub + serves phone UI + proxies catalog |
-| content-dashboard (Vite) | CMS at the Vite dev URL (usually :5173) |
+| content-dashboard (Vite) | CMS at the Vite dev URL (:5174) |
 
 ---
 
